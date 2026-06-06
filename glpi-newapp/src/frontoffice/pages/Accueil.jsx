@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-export default function Home() {
+export default function Accueil() {
   return (
     <main className="home-page">
       <h1>GLPI NewApp</h1>
@@ -9,7 +9,7 @@ export default function Home() {
           <span>Backoffice</span>
         </Link>
         <Link className="choice-card" to="/front/elements">
-          <span>Frontoffice</span>
+          <span>FrontOffice</span>
         </Link>
       </div>
     </main>
