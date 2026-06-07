@@ -3,6 +3,7 @@ import clientGlpiV2 from './glpiV2Client';
 import { afficherValeurGlpi } from '../utils/affichage';
 
 const MARQUAGE_IMPORT_IMAGES = 'NEWAPP_IMPORT_JUIN_2026';
+const NOMS_UTILISATEURS_PROTEGES = ['glpi', 'post-only', 'tech', 'normal', 'super-admin'];
 
 const typesElementsMetier = [
   ['Computer', 'Ordinateurs'],
@@ -43,6 +44,52 @@ function normaliserElement(element, itemtype) {
 
 function recupererMessageErreur(erreur) {
   return erreur?.message || 'Erreur inconnue';
+}
+
+function valeurContientMarqueurImport(valeur) {
+  return String(valeur || '').includes(MARQUAGE_IMPORT_IMAGES);
+}
+
+function utilisateurEstMarqueImporte(utilisateur) {
+  return valeurContientMarqueurImport(utilisateur?.comment) ||
+    valeurContientMarqueurImport(utilisateur?.comments);
+}
+
+function recupererNomUtilisateur(utilisateur) {
+  return String(utilisateur?.name || '').trim();
+}
+
+function utilisateurEstProtege(utilisateur) {
+  return NOMS_UTILISATEURS_PROTEGES.includes(recupererNomUtilisateur(utilisateur).toLowerCase());
+}
+
+function valeurCorrespondUtilisateur(valeur, idUtilisateur) {
+  if (valeur === null || valeur === undefined) {
+    return false;
+  }
+
+  if (Array.isArray(valeur)) {
+    return valeur.some((element) => valeurCorrespondUtilisateur(element, idUtilisateur));
+  }
+
+  if (typeof valeur === 'object') {
+    if (String(valeur.id || '') === String(idUtilisateur)) {
+      return true;
+    }
+
+    return Object.values(valeur).some((sousValeur) =>
+      valeurCorrespondUtilisateur(sousValeur, idUtilisateur),
+    );
+  }
+
+  return String(valeur) === String(idUtilisateur);
+}
+
+function donneeEstLieeAUtilisateur(donnee, idUtilisateur) {
+  return Object.entries(donnee || {}).some(([cle, valeur]) => {
+    const cleUtilisateur = cle.toLowerCase().includes('user') || cle.toLowerCase().includes('users_id');
+    return cleUtilisateur && valeurCorrespondUtilisateur(valeur, idUtilisateur);
+  });
 }
 
 function extraireIdDocumentDepuisLien(lien) {
@@ -474,6 +521,20 @@ export async function recupererCoutsTicketV1() {
   }
 }
 
+export async function recupererUtilisateursImportes() {
+  const reponse = await clientGlpiLegacy.get('/User?range=0-999&expand_dropdowns=true');
+
+  return convertirEnTableau(reponse.data)
+    .filter(utilisateurEstMarqueImporte)
+    .map((utilisateur) => ({
+      id: utilisateur.id,
+      name: utilisateur.name,
+      realname: utilisateur.realname,
+      comment: utilisateur.comment || utilisateur.comments || '',
+      donneesOriginales: utilisateur,
+    }));
+}
+
 export async function recupererModulesDisponibles() {
   const [tickets, relations, couts, ...groupesElements] = await Promise.all([
     recupererTicketsV2(),
@@ -502,6 +563,87 @@ export async function recupererModulesDisponibles() {
   };
 }
 
+async function recupererTicketsRestantsPourUtilisateur() {
+  try {
+    return await recupererTicketsV2();
+  } catch {
+    try {
+      const reponse = await clientGlpiLegacy.get('/Ticket?range=0-999&expand_dropdowns=true');
+      return convertirEnTableau(reponse.data);
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function recupererElementsRestantsPourUtilisateur() {
+  try {
+    return await recupererElementsV2();
+  } catch {
+    try {
+      const groupesElements = await Promise.all(
+        typesElementsMetier.map(async ([itemtype]) => {
+          const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-999&expand_dropdowns=true`);
+          return convertirEnTableau(reponse.data).map((element) => normaliserElement(element, itemtype));
+        }),
+      );
+      return groupesElements.flat();
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function utilisateurEstLieADonneesNonImportees(idUtilisateur, ajouterLog) {
+  const [ticketsRestants, elementsRestants] = await Promise.all([
+    recupererTicketsRestantsPourUtilisateur(),
+    recupererElementsRestantsPourUtilisateur(),
+  ]);
+
+  if (!ticketsRestants || !elementsRestants) {
+    ajouterLog('Utilisateur non supprimé car la vérification des liens GLPI a échoué.');
+    return true;
+  }
+
+  const ticketNonImporteLie = ticketsRestants.some((ticket) =>
+    donneeEstLieeAUtilisateur(ticket, idUtilisateur),
+  );
+  const elementNonImporteLie = elementsRestants.some((element) =>
+    donneeEstLieeAUtilisateur(element, idUtilisateur),
+  );
+
+  return ticketNonImporteLie || elementNonImporteLie;
+}
+
+export async function supprimerUtilisateurImporte(idUtilisateur, ajouterLog = () => {}) {
+  const reponseUtilisateur = await clientGlpiLegacy.get(`/User/${idUtilisateur}?expand_dropdowns=true`);
+  const utilisateur = reponseUtilisateur.data;
+
+  if (utilisateurEstProtege(utilisateur)) {
+    return { supprime: false, ignore: true, raison: 'utilisateur système protégé' };
+  }
+
+  if (!utilisateurEstMarqueImporte(utilisateur)) {
+    return { supprime: false, ignore: true, raison: 'marqueur import absent' };
+  }
+
+  if (await utilisateurEstLieADonneesNonImportees(idUtilisateur, ajouterLog)) {
+    return {
+      supprime: false,
+      ignore: false,
+      raison: 'Utilisateur non supprimé car encore lié à des données GLPI non importées.',
+    };
+  }
+
+  try {
+    await clientGlpiLegacy.delete(`/User/${idUtilisateur}?force_purge=true`);
+  } catch {
+    await clientGlpiLegacy.delete(`/User/${idUtilisateur}`);
+  }
+
+  return { supprime: true, ignore: false, raison: '' };
+}
+
 // ─── SUPPRESSION DES RELATIONS ET COÛTS ───────────────────────────────────────
 
 export async function supprimerRelationItemTicketV1(id) {
@@ -518,7 +660,8 @@ export async function supprimerCoutTicketV1(id) {
 
 // ─── RÉINITIALISATION COMPLÈTE ────────────────────────────────────────────────
 
-export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
+export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = {}) {
+  const supprimerUtilisateursImportes = options.supprimerUtilisateursImportes === true;
   const erreurs = [];
   const resume = {
     ticketsTrouves: 0,
@@ -535,6 +678,10 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
     liensDocumentsSupprimes: 0,
     documentsSupprimes: 0,
     documentsNonSupprimes: 0,
+    utilisateursTrouves: 0,
+    utilisateursSupprimes: 0,
+    utilisateursNonSupprimes: 0,
+    utilisateursIgnores: 0,
     erreurs,
   };
 
@@ -628,6 +775,54 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
+  }
+
+  if (supprimerUtilisateursImportes) {
+    ajouterLog('Recherche utilisateurs importés');
+
+    try {
+      const utilisateurs = await recupererUtilisateursImportes();
+      resume.utilisateursTrouves = utilisateurs.length;
+      ajouterLog(`${utilisateurs.length} utilisateurs importés trouvés`);
+
+      for (const utilisateur of utilisateurs) {
+        const nomUtilisateur = recupererNomUtilisateur(utilisateur) || utilisateur.realname || `#${utilisateur.id}`;
+
+        if (utilisateurEstProtege(utilisateur)) {
+          resume.utilisateursIgnores += 1;
+          ajouterLog(`Utilisateur ${nomUtilisateur} ignoré`);
+          continue;
+        }
+
+        ajouterLog(`Suppression utilisateur ${nomUtilisateur} #${utilisateur.id}`);
+
+        try {
+          const resultat = await supprimerUtilisateurImporte(utilisateur.id, ajouterLog);
+
+          if (resultat.supprime) {
+            resume.utilisateursSupprimes += 1;
+            ajouterLog(`Utilisateur ${nomUtilisateur} supprimé`);
+          } else if (resultat.ignore) {
+            resume.utilisateursIgnores += 1;
+            ajouterLog(`Utilisateur ${nomUtilisateur} ignoré`);
+          } else {
+            resume.utilisateursNonSupprimes += 1;
+            ajouterLog(`Utilisateur ${nomUtilisateur} non supprimé car encore lié à des données GLPI non importées`);
+          }
+        } catch (erreur) {
+          resume.utilisateursNonSupprimes += 1;
+          const message = `Utilisateur ${nomUtilisateur} #${utilisateur.id} : ${formaterErreurDetaillee(erreur)}`;
+          erreurs.push(message);
+          ajouterLog(`Erreur ${message}`);
+        }
+      }
+    } catch (erreur) {
+      const message = `Recherche utilisateurs importés : ${formaterErreurDetaillee(erreur)}`;
+      erreurs.push(message);
+      ajouterLog(`Erreur ${message}`);
+    }
+  } else {
+    ajouterLog('Suppression des utilisateurs importés désactivée');
   }
 
   return resume;

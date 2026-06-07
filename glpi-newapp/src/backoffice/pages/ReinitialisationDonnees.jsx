@@ -11,6 +11,7 @@ export default function ReinitialisationDonnees() {
   const [modules, definirModules] = useState([]);
   const [journal, definirJournal] = useState([]);
   const [resume, definirResume] = useState(null);
+  const [supprimerUtilisateursImportes, definirSupprimerUtilisateursImportes] = useState(false);
   const [chargementAnalyse, definirChargementAnalyse] = useState(false);
   const [chargementReinitialisation, definirChargementReinitialisation] = useState(false);
   const [erreur, definirErreur] = useState('');
@@ -56,7 +57,9 @@ export default function ReinitialisationDonnees() {
     ajouterLog('Réinitialisation de toutes les données métier démarrée');
 
     try {
-      const resultat = await reinitialiserToutesLesDonneesMetier(ajouterLog);
+      const resultat = await reinitialiserToutesLesDonneesMetier(ajouterLog, {
+        supprimerUtilisateursImportes,
+      });
       definirResume(resultat);
       ajouterLog('Réinitialisation terminée');
 
@@ -97,6 +100,18 @@ export default function ReinitialisationDonnees() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="detail-panel">
+        <h2>Options facultatives</h2>
+        <label className="option-reinitialisation">
+          <input
+            type="checkbox"
+            checked={supprimerUtilisateursImportes}
+            onChange={(evenement) => definirSupprimerUtilisateursImportes(evenement.target.checked)}
+          />
+          Supprimer aussi les utilisateurs importés
+        </label>
       </section>
 
       <div className="button-row">
@@ -171,6 +186,22 @@ export default function ReinitialisationDonnees() {
               <dt>Documents non supprimés</dt>
               <dd>{resume.documentsNonSupprimes}</dd>
             </div>
+            <div>
+              <dt>Utilisateurs importés trouvés</dt>
+              <dd>{resume.utilisateursTrouves}</dd>
+            </div>
+            <div>
+              <dt>Utilisateurs supprimés</dt>
+              <dd>{resume.utilisateursSupprimes}</dd>
+            </div>
+            <div>
+              <dt>Utilisateurs ignorés</dt>
+              <dd>{resume.utilisateursIgnores}</dd>
+            </div>
+            <div>
+              <dt>Utilisateurs non supprimés</dt>
+              <dd>{resume.utilisateursNonSupprimes}</dd>
+            </div>
           </dl>
 
           {resume.erreurs.length > 0 ? (
@@ -184,15 +215,23 @@ export default function ReinitialisationDonnees() {
             </div>
           ) : null}
 
-          {resume.ticketsNonSupprimes === 0 && resume.elementsNonSupprimes === 0 && resume.erreurs.length === 0 ? (
+          {resume.ticketsNonSupprimes === 0 &&
+          resume.elementsNonSupprimes === 0 &&
+          resume.utilisateursNonSupprimes === 0 &&
+          resume.erreurs.length === 0 ? (
             <p className="message-succes">Réinitialisation terminée sans erreur.</p>
           ) : null}
 
-          {resume.ticketsNonSupprimes > 0 || resume.elementsNonSupprimes > 0 ? (
+          {resume.ticketsNonSupprimes > 0 ||
+          resume.elementsNonSupprimes > 0 ||
+          resume.utilisateursNonSupprimes > 0 ? (
             <p className="message-erreur">
               Réinitialisation terminée avec éléments non supprimés
               {resume.ticketsNonSupprimes > 0 ? ` (${resume.ticketsNonSupprimes} ticket(s))` : ''}
-              {resume.elementsNonSupprimes > 0 ? ` (${resume.elementsNonSupprimes} élément(s))` : ''}.
+              {resume.elementsNonSupprimes > 0 ? ` (${resume.elementsNonSupprimes} élément(s))` : ''}
+              {resume.utilisateursNonSupprimes > 0
+                ? ` (${resume.utilisateursNonSupprimes} utilisateur(s))`
+                : ''}.
             </p>
           ) : null}
         </section>

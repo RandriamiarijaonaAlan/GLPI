@@ -430,6 +430,19 @@ td input[type="checkbox"] {
   margin: 0;
 }
 
+.option-reinitialisation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.option-reinitialisation input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
 .metric-section {
   display: grid;
   gap: 12px;
