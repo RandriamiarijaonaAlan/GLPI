@@ -2,6 +2,8 @@ import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
 import { afficherValeurGlpi } from '../utils/affichage';
 
+const MARQUAGE_IMPORT_IMAGES = 'NEWAPP_IMPORT_JUIN_2026';
+
 const typesElementsMetier = [
   ['Computer', 'Ordinateurs'],
   ['Monitor', 'Moniteurs'],
@@ -41,6 +43,174 @@ function normaliserElement(element, itemtype) {
 
 function recupererMessageErreur(erreur) {
   return erreur?.message || 'Erreur inconnue';
+}
+
+function extraireIdDocumentDepuisLien(lien) {
+  return lien?.documents_id || lien?.document_id || null;
+}
+
+function recupererNomDocument(document) {
+  return String(document?.name || document?.filename || '').trim();
+}
+
+function documentEstMarquePourSuppression(document) {
+  const nom = recupererNomDocument(document).toUpperCase();
+  const commentaire = String(document?.comment || document?.comments || '').toUpperCase();
+  return nom.includes(MARQUAGE_IMPORT_IMAGES) || commentaire.includes(MARQUAGE_IMPORT_IMAGES);
+}
+
+function documentEstImageImporte(document) {
+  const nom = recupererNomDocument(document).toLowerCase();
+  const nomFichier = String(document?.filename || document?._filename || '').trim().toLowerCase();
+
+  return (
+    documentEstMarquePourSuppression(document) ||
+    nom.endsWith('.png') ||
+    nom.endsWith('.jpg') ||
+    nom.endsWith('.jpeg') ||
+    nom.endsWith('.webp') ||
+    nomFichier.endsWith('.png') ||
+    nomFichier.endsWith('.jpg') ||
+    nomFichier.endsWith('.jpeg') ||
+    nomFichier.endsWith('.webp')
+  );
+}
+
+function cleLienAsset(lien) {
+  return `${lien.itemtype}#${lien.items_id}`;
+}
+
+function documentEstIntrouvable(erreur) {
+  return estErreurIntrouvable(erreur);
+}
+
+async function verifierSuppressionDocument(idDocument) {
+  try {
+    await clientGlpiLegacy.get(`/Document/${idDocument}`);
+    return { supprime: false };
+  } catch (erreur) {
+    if (documentEstIntrouvable(erreur)) {
+      return { supprime: true };
+    }
+
+    return { supprime: false };
+  }
+}
+
+export async function recupererDocumentsImagesImportes() {
+  try {
+    const reponse = await clientGlpiLegacy.get('/Document?range=0-999&expand_dropdowns=true');
+    return convertirEnTableau(reponse.data).filter(documentEstImageImporte);
+  } catch {
+    return [];
+  }
+}
+
+export async function recupererLiensDocuments() {
+  try {
+    const reponse = await clientGlpiLegacy.get('/Document_Item?range=0-999&expand_dropdowns=true');
+    return convertirEnTableau(reponse.data);
+  } catch {
+    return [];
+  }
+}
+
+export async function supprimerLienDocumentElement(idLien) {
+  const reponse = await clientGlpiLegacy.delete(`/Document_Item/${idLien}`);
+  return reponse.data;
+}
+
+export async function supprimerDocumentImage(idDocument) {
+  try {
+    await clientGlpiLegacy.delete(`/Document/${idDocument}?force_purge=true`);
+    return true;
+  } catch {
+    try {
+      await clientGlpiLegacy.delete(`/Document/${idDocument}`);
+    } catch {
+      // Tentative de suppression simple avant le forçage final.
+    }
+
+    try {
+      await clientGlpiLegacy.delete(`/Document/${idDocument}?force_purge=true`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function supprimerDocumentsImagesImportes(ajouterLog, resume) {
+  ajouterLog('Recherche des documents images importés');
+
+  const documents = await recupererDocumentsImagesImportes();
+  resume.documentsTrouves = documents.length;
+
+  if (documents.length === 0) {
+    ajouterLog('Aucun document image trouvé');
+    return;
+  }
+
+  ajouterLog(`${documents.length} documents images trouvés`);
+
+  const liensParDocument = new Map();
+  const liensGlobaux = await recupererLiensDocuments();
+
+  for (const lien of liensGlobaux) {
+    const idDocument = String(extraireIdDocumentDepuisLien(lien) || '');
+    if (!idDocument) continue;
+    if (!liensParDocument.has(idDocument)) {
+      liensParDocument.set(idDocument, []);
+    }
+    liensParDocument.get(idDocument).push(lien);
+  }
+
+  for (const document of documents) {
+    const idDocument = String(document?.id || '');
+    const nomDocument = recupererNomDocument(document);
+    const liensDocument = liensParDocument.get(idDocument) || [];
+    const estMarque = documentEstMarquePourSuppression(document);
+
+    if (!estMarque && liensDocument.length === 0) {
+      ajouterLog(`Document ${nomDocument} : aucun lien Document_Item trouvé, suppression directe du document`);
+    } else if (liensDocument.length === 0) {
+      ajouterLog(`Document ${nomDocument} : aucun lien Document_Item trouvé, suppression directe du document`);
+    }
+
+    let erreurLien = false;
+    for (const lien of liensDocument) {
+      try {
+        await supprimerLienDocumentElement(lien.id);
+        resume.liensDocumentsSupprimes += 1;
+        ajouterLog(`Suppression du lien Document_Item #${lien.id}`);
+        ajouterLog(`Document_Item supprimé #${lien.id}`);
+      } catch (erreur) {
+        erreurLien = true;
+        resume.documentsNonSupprimes += 1;
+        ajouterLog(`Erreur suppression Document_Item #${lien.id} : ${recupererMessageErreur(erreur)}`);
+      }
+    }
+
+    if (erreurLien && liensDocument.length > 0) {
+      continue;
+    }
+
+    ajouterLog(`Suppression Document #${idDocument} ${nomDocument}`);
+    const supprime = await supprimerDocumentImage(idDocument);
+    if (supprime) {
+      const verification = await verifierSuppressionDocument(idDocument);
+      if (verification.supprime) {
+        resume.documentsSupprimes += 1;
+        ajouterLog(`Document ${nomDocument} supprimé avec succès`);
+      } else {
+        resume.documentsNonSupprimes += 1;
+        ajouterLog(`Document ${nomDocument} toujours présent après suppression`);
+      }
+    } else {
+      resume.documentsNonSupprimes += 1;
+      ajouterLog(`Document image #${idDocument} non supprimé`);
+    }
+  }
 }
 
 // Formate l'erreur avec le statut HTTP et la réponse GLPI brute pour le journal
@@ -361,6 +531,10 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
     elementsTrouves: 0,
     elementsSupprimes: 0,
     elementsNonSupprimes: 0,
+    documentsTrouves: 0,
+    liensDocumentsSupprimes: 0,
+    documentsSupprimes: 0,
+    documentsNonSupprimes: 0,
     erreurs,
   };
 
@@ -412,6 +586,9 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
       ajouterLog(`Erreur ${message}`);
     }
   }
+
+  // Suppression des liens Document_Item puis des documents images GLPI
+  await supprimerDocumentsImagesImportes(ajouterLog, resume);
 
   // Suppression des tickets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${tickets.length} tickets récupérés via API v2`);

@@ -155,6 +155,22 @@ export default function ReinitialisationDonnees() {
               <dt>Éléments non supprimés</dt>
               <dd>{resume.elementsNonSupprimes}</dd>
             </div>
+            <div>
+              <dt>Documents trouvés</dt>
+              <dd>{resume.documentsTrouves}</dd>
+            </div>
+            <div>
+              <dt>Liens Document_Item supprimés</dt>
+              <dd>{resume.liensDocumentsSupprimes}</dd>
+            </div>
+            <div>
+              <dt>Documents supprimés</dt>
+              <dd>{resume.documentsSupprimes}</dd>
+            </div>
+            <div>
+              <dt>Documents non supprimés</dt>
+              <dd>{resume.documentsNonSupprimes}</dd>
+            </div>
           </dl>
 
           {resume.erreurs.length > 0 ? (
