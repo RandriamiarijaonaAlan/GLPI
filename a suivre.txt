@@ -1,0 +1,172 @@
+Ajouter une option facultative de suppression des utilisateurs importés dans la réinitialisation.
+
+IMPORTANT :
+- Ne pas recréer le projet.
+- Ne pas modifier dashboard.
+- Ne pas modifier import CSV.
+- Ne pas modifier import images.
+- Ne pas modifier auth.
+- Corriger uniquement la réinitialisation.
+- Fonctions, variables et commentaires en français.
+
+Objectif :
+La réinitialisation normale continue de supprimer :
+
+- Tickets
+- Item_Ticket
+- TicketCost
+- Documents images importés
+- Document_Item
+- Ordinateurs
+- Moniteurs
+- Imprimantes
+- Téléphones
+- Équipements réseau
+- Périphériques
+
+Par défaut :
+Les utilisateurs ne sont PAS supprimés.
+
+Ajouter une option :
+
+☐ Supprimer aussi les utilisateurs importés
+
+Valeur par défaut :
+false
+
+─────────────────────────────
+IDENTIFICATION DES UTILISATEURS IMPORTÉS
+─────────────────────────────
+
+Supprimer uniquement les utilisateurs créés par l’application.
+
+Critères :
+
+- comment contient NEWAPP_IMPORT_JUIN_2026
+OU
+- comments contient NEWAPP_IMPORT_JUIN_2026
+
+Créer :
+
+recupererUtilisateursImportes()
+
+Retour :
+[
+  {
+    id,
+    name,
+    realname,
+    comment
+  }
+]
+
+─────────────────────────────
+UTILISATEURS À NE JAMAIS SUPPRIMER
+─────────────────────────────
+
+Ne jamais supprimer :
+
+- glpi
+- post-only
+- tech
+- normal
+- super-admin
+
+Ne jamais supprimer :
+
+- utilisateurs sans marqueur NEWAPP_IMPORT_JUIN_2026
+- utilisateurs système GLPI
+- utilisateurs créés manuellement hors import
+
+─────────────────────────────
+SUPPRESSION SÉCURISÉE
+─────────────────────────────
+
+Créer :
+
+supprimerUtilisateurImporte(idUtilisateur)
+
+Avant suppression :
+
+1. Vérifier que l’utilisateur n’est plus lié à :
+
+- tickets encore présents
+- assets encore présents
+- données GLPI non importées
+
+2. Si des données GLPI non importées sont encore liées :
+
+NE PAS supprimer l’utilisateur.
+
+Ajouter log :
+
+Utilisateur non supprimé car encore lié à des données GLPI non importées.
+
+3. Si plus aucun lien actif :
+
+Supprimer l’utilisateur.
+
+─────────────────────────────
+ORDRE DE RÉINITIALISATION
+─────────────────────────────
+
+1. Item_Ticket
+2. TicketCost
+3. Document_Item
+4. Documents
+5. Tickets
+6. Assets
+7. Utilisateurs importés (si option cochée)
+
+Les utilisateurs doivent toujours être supprimés en dernier.
+
+─────────────────────────────
+LOGS
+─────────────────────────────
+
+Ajouter :
+
+Recherche utilisateurs importés
+
+3 utilisateurs importés trouvés
+
+Suppression utilisateur Rakoto #12
+
+Utilisateur Rakoto supprimé
+
+Utilisateur glpi ignoré
+
+Utilisateur Rabe non supprimé car encore lié à des données GLPI non importées
+
+─────────────────────────────
+RÉSUMÉ FINAL
+─────────────────────────────
+
+Ajouter :
+
+utilisateursTrouves
+utilisateursSupprimes
+utilisateursNonSupprimes
+utilisateursIgnores
+
+Exemple :
+
+Utilisateurs importés trouvés : 3
+Utilisateurs supprimés : 2
+Utilisateurs ignorés : 1
+Utilisateurs non supprimés : 0
+
+─────────────────────────────
+IMPORTANT
+─────────────────────────────
+
+- Si la case n'est pas cochée :
+  aucun utilisateur ne doit être supprimé.
+
+- Ne jamais supprimer les historiques GLPI.
+
+- Les historiques GLPI peuvent rester car ils ne sont pas utilisés dans les statistiques de l’application.
+
+- Ne jamais supprimer les profils, entités, configurations, OAuth, API clients.
+
+- Tous les noms de fonctions, variables et commentaires doivent être en français.

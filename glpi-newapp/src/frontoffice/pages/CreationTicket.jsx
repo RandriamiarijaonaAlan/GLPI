@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { recupererTousLesElements } from '../../api/assetsApi';
-import { creerTicket, lierElementAuTicket } from '../../api/ticketsApi';
+import { creerCoutTicket, creerTicket, convertirNombreFormulaire, lierElementAuTicket } from '../../api/ticketsApi';
 import { afficherValeurGlpi } from '../../utils/affichage';
 
 const formulaireInitial = {
@@ -10,6 +10,9 @@ const formulaireInitial = {
   urgence: '3',
   priorite: '3',
   clesElements: [],
+  dureeSecondes: '',
+  coutTemps: '',
+  coutFixe: '',
 };
 
 function recupererCleElement(element) {
@@ -48,6 +51,14 @@ function completerElementsAvecSelection(elements, elementSelectionne) {
   );
 
   return selectionDejaPresente ? elements : [elementSelectionne, ...elements];
+}
+
+function champCoutRenseigne(formulaire) {
+  return Boolean(
+    String(formulaire.dureeSecondes ?? '').trim() ||
+      String(formulaire.coutTemps ?? '').trim() ||
+      String(formulaire.coutFixe ?? '').trim(),
+  );
 }
 
 export default function CreationTicket() {
@@ -113,6 +124,48 @@ export default function CreationTicket() {
     sessionStorage.removeItem('element_selectionne_ticket');
   }
 
+  async function creerTicketAvecElementsEtCout() {
+    const ticket = await creerTicket({
+      titre: formulaire.titre,
+      description: formulaire.description,
+      type: Number(formulaire.type),
+      urgence: Number(formulaire.urgence),
+      priorite: Number(formulaire.priorite),
+    });
+
+    const idTicket = ticket.id;
+
+    if (!idTicket) {
+      throw new Error(`Ticket créé mais ID introuvable : ${JSON.stringify(ticket)}`);
+    }
+
+    const elementsSelectionnes = elements.filter((element) =>
+      formulaire.clesElements.includes(recupererCleElement(element)),
+    );
+
+    await Promise.all(elementsSelectionnes.map((element) => lierElementAuTicket(idTicket, element)));
+
+    let coutAjoute = false;
+
+    if (champCoutRenseigne(formulaire)) {
+      try {
+        await creerCoutTicket(idTicket, {
+          dureeSecondes: convertirNombreFormulaire(formulaire.dureeSecondes),
+          coutTemps: convertirNombreFormulaire(formulaire.coutTemps),
+          coutFixe: convertirNombreFormulaire(formulaire.coutFixe),
+        });
+        coutAjoute = true;
+      } catch {
+        definirMessageSucces('Ticket créé, mais le coût n’a pas pu être ajouté.');
+        definirErreur('');
+        return;
+      }
+    }
+
+    definirMessageSucces(coutAjoute ? 'Ticket créé avec coût associé' : `Ticket #${idTicket} créé avec succès.`);
+    reinitialiserFormulaire();
+  }
+
   async function gererSoumission(evenement) {
     evenement.preventDefault();
     definirSoumission(true);
@@ -120,28 +173,7 @@ export default function CreationTicket() {
     definirErreur('');
 
     try {
-      const ticket = await creerTicket({
-        titre: formulaire.titre,
-        description: formulaire.description,
-        type: Number(formulaire.type),
-        urgence: Number(formulaire.urgence),
-        priorite: Number(formulaire.priorite),
-      });
-      const idTicket = ticket.id;
-
-      if (!idTicket) {
-        throw new Error(`Ticket créé mais ID introuvable : ${JSON.stringify(ticket)}`);
-      }
-
-      const elementsSelectionnes = elements.filter((element) =>
-        formulaire.clesElements.includes(recupererCleElement(element)),
-      );
-
-      await Promise.all(
-        elementsSelectionnes.map((element) => lierElementAuTicket(idTicket, element)),
-      );
-
-      definirMessageSucces(`Ticket #${idTicket} créé avec succès.`);
+      await creerTicketAvecElementsEtCout();
       reinitialiserFormulaire();
     } catch (erreurSoumission) {
       definirErreur(`Impossible de créer le ticket : ${erreurSoumission.message}`);
@@ -224,6 +256,51 @@ export default function CreationTicket() {
             </select>
           </label>
         </div>
+
+        <section className="coût-durée-ticket" aria-labelledby="titre-cout-ticket">
+          <h2 id="titre-cout-ticket">Coût / durée d’intervention (optionnel)</h2>
+
+          <div className="form-grid">
+            <label htmlFor="ticket-duree-secondes">
+              Durée en secondes
+              <input
+                id="ticket-duree-secondes"
+                type="number"
+                min="0"
+                step="1"
+                value={formulaire.dureeSecondes}
+                onChange={(evenement) => mettreAJourChamp('dureeSecondes', evenement.target.value)}
+                placeholder="0"
+              />
+            </label>
+
+            <label htmlFor="ticket-cout-temps">
+              Coût temps
+              <input
+                id="ticket-cout-temps"
+                type="number"
+                min="0"
+                step="0.01"
+                value={formulaire.coutTemps}
+                onChange={(evenement) => mettreAJourChamp('coutTemps', evenement.target.value)}
+                placeholder="0"
+              />
+            </label>
+
+            <label htmlFor="ticket-cout-fixe">
+              Coût fixe
+              <input
+                id="ticket-cout-fixe"
+                type="number"
+                min="0"
+                step="0.01"
+                value={formulaire.coutFixe}
+                onChange={(evenement) => mettreAJourChamp('coutFixe', evenement.target.value)}
+                placeholder="0"
+              />
+            </label>
+          </div>
+        </section>
 
         <section className="selection-elements-ticket" aria-labelledby="titre-elements-ticket">
           <div className="entete-selection-elements">

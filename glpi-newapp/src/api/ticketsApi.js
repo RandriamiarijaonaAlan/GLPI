@@ -1,6 +1,21 @@
 import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
 
+function convertirNombreFormulaire(valeur) {
+  if (valeur === null || valeur === undefined) {
+    return 0;
+  }
+
+  const texte = String(valeur).trim().replace(',', '.');
+
+  if (!texte) {
+    return 0;
+  }
+
+  const nombre = Number(texte);
+  return Number.isNaN(nombre) ? 0 : nombre;
+}
+
 function extraireIdTicketCree(donnees) {
   if (donnees?.id) {
     return donnees.id;
@@ -125,6 +140,23 @@ export async function lierElementAuTicket(idTicket, element) {
   return reponse.data;
 }
 
+export async function creerCoutTicket(idTicket, donneesCout) {
+  const corpsCout = {
+    tickets_id: idTicket,
+    name: 'Coût saisi depuis NewAPP',
+    actiontime: convertirNombreFormulaire(donneesCout?.dureeSecondes),
+    cost_time: convertirNombreFormulaire(donneesCout?.coutTemps),
+    cost_fixed: convertirNombreFormulaire(donneesCout?.coutFixe),
+    entities_id: 0,
+  };
+
+  const reponse = await clientGlpiLegacy.post('/TicketCost', {
+    input: corpsCout,
+  });
+
+  return reponse.data;
+}
+
 export async function recupererElementsDuTicket(idTicket) {
   const reponse = await clientGlpiLegacy.get(
     `/Item_Ticket?searchText[tickets_id]=${encodeURIComponent(idTicket)}&expand_dropdowns=true`,
@@ -134,3 +166,4 @@ export async function recupererElementsDuTicket(idTicket) {
 }
 
 export const recupererElementsTicket = recupererElementsDuTicket;
+export { convertirNombreFormulaire };

@@ -11,6 +11,15 @@ const libellesTypesElements = {
   Peripheral: 'Périphérique',
 };
 
+const champsModeleParType = {
+  Computer: 'computermodels_id',
+  Monitor: 'monitormodels_id',
+  Printer: 'printermodels_id',
+  Phone: 'phonemodels_id',
+  NetworkEquipment: 'networkequipmentmodels_id',
+  Peripheral: 'peripheralmodels_id',
+};
+
 const cheminsElements = [
   ['Computer', '/Computer?range=0-999&expand_dropdowns=true', '/Asset/Computer?limit=1000'],
   ['Monitor', '/Monitor?range=0-999&expand_dropdowns=true', '/Asset/Monitor?limit=1000'],
@@ -23,6 +32,17 @@ const cheminsElements = [
   ],
   ['Peripheral', '/Peripheral?range=0-999&expand_dropdowns=true', '/Asset/Peripheral?limit=1000'],
 ];
+
+function normaliserValeurAffichage(valeur) {
+  const valeurAffichee = afficherValeurGlpi(valeur);
+  const texte = String(valeurAffichee ?? '').trim();
+
+  if (!texte || texte === '0') {
+    return '-';
+  }
+
+  return texte;
+}
 
 function normaliserListeElements(donnees) {
   if (Array.isArray(donnees)) {
@@ -45,13 +65,21 @@ function normaliserListeElements(donnees) {
 }
 
 function enrichirElements(donnees, itemtype) {
+  const champModele = champsModeleParType[itemtype];
+
   return normaliserListeElements(donnees).map((element) => ({
     ...element,
+    id: element.id,
+    name: normaliserValeurAffichage(element.name),
+    status: normaliserValeurAffichage(element.status || element.states_id),
+    location: normaliserValeurAffichage(element.location || element.locations_id),
+    manufacturer: normaliserValeurAffichage(element.manufacturer || element.manufacturers_id),
+    itemType: itemtype,
+    model: normaliserValeurAffichage(element.model || element[champModele]),
+    inventoryNumber: normaliserValeurAffichage(element.otherserial || element.inventory_number),
+    user: normaliserValeurAffichage(element.user || element.users_id),
     itemtype,
     typeAffiche: libellesTypesElements[itemtype] || itemtype,
-    statut: afficherValeurGlpi(element.states_id),
-    localisation: afficherValeurGlpi(element.locations_id),
-    fabricant: afficherValeurGlpi(element.manufacturers_id),
   }));
 }
 

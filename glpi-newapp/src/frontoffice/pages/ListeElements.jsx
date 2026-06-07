@@ -5,31 +5,40 @@ import { afficherValeurGlpi } from '../../utils/affichage';
 
 const filtresInitiaux = {
   nom: '',
-  type: '',
   statut: '',
-  numeroSerie: '',
   localisation: '',
+  fabricant: '',
+  typeElement: '',
+  modele: '',
+  numeroInventaire: '',
+  utilisateur: '',
 };
 
 function normaliserValeur(valeur) {
   return String(afficherValeurGlpi(valeur) ?? '').trim().toLowerCase();
 }
 
-function recupererStatut(element) {
-  return afficherValeurGlpi(element.statut || element.states_id);
-}
+function normaliserValeurAffichage(valeur) {
+  const valeurAffichee = afficherValeurGlpi(valeur);
+  const texte = String(valeurAffichee ?? '').trim();
 
-function recupererLocalisation(element) {
-  return afficherValeurGlpi(element.localisation || element.locations_id);
+  if (!texte || texte === '0') {
+    return '-';
+  }
+
+  return texte;
 }
 
 function elementCorrespondAuxFiltres(element, filtres) {
   const valeursElement = {
     nom: normaliserValeur(element.name),
-    type: normaliserValeur(`${element.typeAffiche} ${element.itemtype}`),
-    statut: normaliserValeur(recupererStatut(element)),
-    numeroSerie: normaliserValeur(element.serial),
-    localisation: normaliserValeur(recupererLocalisation(element)),
+    statut: normaliserValeur(element.status),
+    localisation: normaliserValeur(element.location),
+    fabricant: normaliserValeur(element.manufacturer),
+    typeElement: normaliserValeur(`${element.typeAffiche} ${element.itemType} ${element.itemtype}`),
+    modele: normaliserValeur(element.model),
+    numeroInventaire: normaliserValeur(element.inventoryNumber),
+    utilisateur: normaliserValeur(element.user),
   };
 
   return Object.entries(filtres).every(([champ, valeur]) => {
@@ -114,17 +123,6 @@ export default function ListeElements() {
               />
             </label>
 
-            <label htmlFor="filtre-type">
-              Type
-              <input
-                id="filtre-type"
-                type="search"
-                value={filtres.type}
-                onChange={(evenement) => mettreAJourFiltre('type', evenement.target.value)}
-                placeholder="Ordinateur, Printer..."
-              />
-            </label>
-
             <label htmlFor="filtre-statut">
               Statut
               <input
@@ -136,17 +134,6 @@ export default function ListeElements() {
               />
             </label>
 
-            <label htmlFor="filtre-numero-serie">
-              Numéro de série
-              <input
-                id="filtre-numero-serie"
-                type="search"
-                value={filtres.numeroSerie}
-                onChange={(evenement) => mettreAJourFiltre('numeroSerie', evenement.target.value)}
-                placeholder="Numéro de série"
-              />
-            </label>
-
             <label htmlFor="filtre-localisation">
               Localisation
               <input
@@ -155,6 +142,61 @@ export default function ListeElements() {
                 value={filtres.localisation}
                 onChange={(evenement) => mettreAJourFiltre('localisation', evenement.target.value)}
                 placeholder="Localisation"
+              />
+            </label>
+
+            <label htmlFor="filtre-fabricant">
+              Fabricant
+              <input
+                id="filtre-fabricant"
+                type="search"
+                value={filtres.fabricant}
+                onChange={(evenement) => mettreAJourFiltre('fabricant', evenement.target.value)}
+                placeholder="Fabricant"
+              />
+            </label>
+
+            <label htmlFor="filtre-type-element">
+              Type d’élément
+              <input
+                id="filtre-type-element"
+                type="search"
+                value={filtres.typeElement}
+                onChange={(evenement) => mettreAJourFiltre('typeElement', evenement.target.value)}
+                placeholder="Ordinateur, Imprimante..."
+              />
+            </label>
+
+            <label htmlFor="filtre-modele">
+              Modèle
+              <input
+                id="filtre-modele"
+                type="search"
+                value={filtres.modele}
+                onChange={(evenement) => mettreAJourFiltre('modele', evenement.target.value)}
+                placeholder="Modèle"
+              />
+            </label>
+
+            <label htmlFor="filtre-numero-inventaire">
+              Numéro d’inventaire
+              <input
+                id="filtre-numero-inventaire"
+                type="search"
+                value={filtres.numeroInventaire}
+                onChange={(evenement) => mettreAJourFiltre('numeroInventaire', evenement.target.value)}
+                placeholder="Numéro d’inventaire"
+              />
+            </label>
+
+            <label htmlFor="filtre-utilisateur">
+              Utilisateur
+              <input
+                id="filtre-utilisateur"
+                type="search"
+                value={filtres.utilisateur}
+                onChange={(evenement) => mettreAJourFiltre('utilisateur', evenement.target.value)}
+                placeholder="Utilisateur"
               />
             </label>
 
@@ -174,10 +216,13 @@ export default function ListeElements() {
                   <tr>
                     <th>ID</th>
                     <th>Nom</th>
-                    <th>Type</th>
                     <th>Statut</th>
-                    <th>Numéro de série</th>
                     <th>Localisation</th>
+                    <th>Fabricant</th>
+                    <th>Type d’élément</th>
+                    <th>Modèle</th>
+                    <th>Numéro d’inventaire</th>
+                    <th>Utilisateur</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -185,11 +230,14 @@ export default function ListeElements() {
                   {elementsFiltres.map((element) => (
                     <tr key={`${element.itemtype}-${element.id}`}>
                       <td>{element.id}</td>
-                      <td>{afficherValeurGlpi(element.name)}</td>
-                      <td>{afficherValeurGlpi(element.typeAffiche || element.itemtype)}</td>
-                      <td>{recupererStatut(element)}</td>
-                      <td>{afficherValeurGlpi(element.serial)}</td>
-                      <td>{recupererLocalisation(element)}</td>
+                      <td>{normaliserValeurAffichage(element.name)}</td>
+                      <td>{normaliserValeurAffichage(element.status)}</td>
+                      <td>{normaliserValeurAffichage(element.location)}</td>
+                      <td>{normaliserValeurAffichage(element.manufacturer)}</td>
+                      <td>{normaliserValeurAffichage(element.typeAffiche || element.itemType || element.itemtype)}</td>
+                      <td>{normaliserValeurAffichage(element.model)}</td>
+                      <td>{normaliserValeurAffichage(element.inventoryNumber)}</td>
+                      <td>{normaliserValeurAffichage(element.user)}</td>
                       <td>
                         <button type="button" onClick={() => creerTicketPourElement(element)}>
                           Créer un ticket

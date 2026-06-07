@@ -222,6 +222,8 @@ export default function ImporterFichiers() {
       elementsImportes: 0,
       ticketsImportes: 0,
       coutsImportes: 0,
+      coutsIgnores: 0,
+      erreursCouts: 0,
       associationsCreees: 0,
       doublons: 0,
       lignesIgnorees: 0,
@@ -287,6 +289,9 @@ export default function ImporterFichiers() {
           coutsImportes: 0,
           doublons: 0,
           erreurs: 0,
+          utilisateursCrees: 0,
+          utilisateursExistants: 0,
+          utilisateursNonCrees: 0,
         };
 
         ajouterLog(`Import démarré : "${fichier.name}" (${type}, ${donnees.length} lignes)`);
@@ -299,6 +304,9 @@ export default function ImporterFichiers() {
           if (cle === 'elements') {
             resumeFichier.elementsImportes = res.importes;
             resumeFichier.doublons = res.doublons;
+            resumeFichier.utilisateursCrees = res.utilisateursCrees || 0;
+            resumeFichier.utilisateursExistants = res.utilisateursExistants || 0;
+            resumeFichier.utilisateursNonCrees = res.utilisateursNonCrees || 0;
             resumeGlobal.elementsImportes += res.importes;
             resumeGlobal.doublons += res.doublons;
             resumeGlobal.lignesImportees += res.importes;
@@ -315,8 +323,10 @@ export default function ImporterFichiers() {
           } else if (cle === 'couts') {
             resumeFichier.coutsImportes = res.importes;
             resumeGlobal.coutsImportes += res.importes;
+            resumeGlobal.coutsIgnores += res.coutsIgnores;
+            resumeGlobal.erreursCouts += res.erreursCouts;
             resumeGlobal.lignesImportees += res.importes;
-            resumeGlobal.lignesIgnorees += res.erreurs;
+            resumeGlobal.lignesIgnorees += res.coutsIgnores + res.erreursCouts;
           }
 
           resumeGlobal.avertissements.push(...res.avertissements);
@@ -809,6 +819,12 @@ export default function ImporterFichiers() {
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - doublons ignorés : {resume.doublons}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - coûts ignorés : {resume.coutsIgnores || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - erreurs coûts : {resume.erreursCouts || 0}
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - avertissements : {resume.avertissements.length + (resumeImages?.avertissementsImages?.length || 0)}
