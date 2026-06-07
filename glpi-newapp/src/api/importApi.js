@@ -47,6 +47,17 @@ function normaliserNomRecherche(valeur) {
   return String(valeur ?? '').trim().toLowerCase();
 }
 
+function normaliserComparaisonElement(valeur) {
+  return String(valeur ?? '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function formaterErreurApiComplete(erreur) {
+  const statut = erreur.response?.status;
+  const donnees = erreur.response?.data;
+  const message = donnees ? JSON.stringify(donnees) : erreur.message || 'Erreur inconnue';
+  return statut ? `HTTP ${statut} - ${message}` : message;
+}
+
 function extraireNomReference(reference) {
   if (!reference) return '';
 
@@ -287,6 +298,15 @@ async function chargerElementsParType(itemtype) {
   }
 }
 
+async function chargerElementsParTypePourAssociation(itemtype) {
+  try {
+    const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-999&expand_dropdowns=true`);
+    return normaliserEnTableau(reponse.data);
+  } catch {
+    return [];
+  }
+}
+
 // Charge tous les tickets depuis GLPI (API v1)
 async function chargerTousLesTickets() {
   try {
@@ -465,9 +485,9 @@ export function nettoyerNomElementDepuisCsv(valeur) {
 
 // Convertit une valeur CSV en nombre
 // Remplace la virgule décimale par un point, retourne valeurParDefaut si vide ou NaN
-function convertirNombreCsv(valeur, valeurParDefaut = 0) {
+export function convertirNombreCsv(valeur, valeurParDefaut = 0) {
   if (valeur === null || valeur === undefined) return valeurParDefaut;
-  const texte = String(valeur).trim().replace(',', '.');
+  const texte = String(valeur).trim().replace(/\s+/g, '').replace(',', '.');
   if (!texte) return valeurParDefaut;
   const nombre = Number(texte);
   return Number.isNaN(nombre) ? valeurParDefaut : nombre;
@@ -487,7 +507,9 @@ function trouverElementParNom(elements, nomRecherche) {
 
 function extraireNomsElementsDepuisItems(valeurItems) {
   if (Array.isArray(valeurItems)) {
-    return [...new Set(valeurItems.map((v) => String(v || '').trim()).filter(Boolean))];
+    return valeurItems
+      .map((valeur) => String(valeur || '').trim().replace(/^["'[\s]+|["'\]\s]+$/g, '').trim())
+      .filter(Boolean);
   }
 
   let texte = String(valeurItems ?? '').trim();
@@ -508,7 +530,7 @@ function extraireNomsElementsDepuisItems(valeurItems) {
     try {
       const tableau = JSON.parse(texte);
       if (Array.isArray(tableau)) {
-        return [...new Set(tableau.map((v) => String(v || '').trim()).filter(Boolean))];
+        return tableau.map((valeur) => String(valeur || '').trim()).filter(Boolean);
       }
     } catch {
       // JSON invalide : retirer les crochets et traiter manuellement
@@ -519,14 +541,33 @@ function extraireNomsElementsDepuisItems(valeurItems) {
   // Séparateur : point-virgule en priorité, puis virgule
   const separateur = texte.includes(';') ? /;/ : /,/;
 
-  return [
-    ...new Set(
-      texte
-        .split(separateur)
-        .map((v) => v.trim().replace(/^["'[\s]+|["'\]\s]+$/g, '').trim())
-        .filter(Boolean)
-    ),
-  ];
+  return texte
+    .split(separateur)
+    .map((valeur) => valeur.trim().replace(/^["'[\s]+|["'\]\s]+$/g, '').trim())
+    .filter(Boolean);
+}
+
+function recupererDoublonsNomsElements(nomsElements) {
+  const dejaVus = new Set();
+  const doublons = [];
+
+  for (const nom of nomsElements) {
+    const nomPropre = String(nom || '').trim();
+    const cleComparaison = normaliserComparaisonElement(nomPropre);
+
+    if (!cleComparaison) {
+      continue;
+    }
+
+    if (dejaVus.has(cleComparaison)) {
+      doublons.push(nomPropre);
+      continue;
+    }
+
+    dejaVus.add(cleComparaison);
+  }
+
+  return doublons;
 }
 
 function supprimerDoublonsNomsElements(nomsElements) {
@@ -540,7 +581,7 @@ function supprimerDoublonsNomsElements(nomsElements) {
       continue;
     }
 
-    const cleComparaison = nomPropre.replace(/\s+/g, '').toLowerCase();
+    const cleComparaison = normaliserComparaisonElement(nomPropre);
 
     if (dejaVus.has(cleComparaison)) {
       continue;
@@ -562,7 +603,7 @@ function relationItemTicketDejaExistante(relationsExistantes, element) {
 
   return relationsExistantes.some((relation) => {
     const itemtypeRelation = relation.itemtype || relation.items_id?.itemtype || relation.items_id?.type;
-    const itemsIdRelation = relation.items_id?.id || relation.items_id || relation.items_id?.items_id;
+    const itemsIdRelation = relation.items_id?.id || relation.items_id?.items_id || relation.items_id;
     return normaliserCleRelation(itemtypeRelation, itemsIdRelation) === cleRecherchee;
   });
 }
@@ -596,14 +637,14 @@ function trouverElementPourAssociation(elements, nomRecherche) {
 
 // Recherche un élément dans tous les types reconnus par name, serial, otherserial ou inventory_number
 // Charge chaque type à la demande et met en cache le résultat pour l'import en cours
-async function rechercherElementParNomOuInventaire(nomElement) {
-  const recherche = String(nomElement || '').trim().toLowerCase();
+async function rechercherElementParNomOuInventaire(nomElement, ajouterLog = () => {}) {
+  const recherche = normaliserComparaisonElement(nomElement);
   if (!recherche) return null;
 
   if (!cacheElementsTicketImport) {
     cacheElementsTicketImport = {};
     for (const type of TYPES_ELEMENTS_VALIDES) {
-      cacheElementsTicketImport[type] = await chargerElementsParType(type);
+      cacheElementsTicketImport[type] = await chargerElementsParTypePourAssociation(type);
     }
   }
 
@@ -611,12 +652,18 @@ async function rechercherElementParNomOuInventaire(nomElement) {
     const elements = cacheElementsTicketImport[type] || [];
     const trouve = elements.find(
       (el) =>
-        String(el.name || '').trim().toLowerCase() === recherche ||
-        String(el.serial || '').trim().toLowerCase() === recherche ||
-        String(el.otherserial || '').trim().toLowerCase() === recherche ||
-        String(el.inventory_number || '').trim().toLowerCase() === recherche
+        normaliserComparaisonElement(el.name) === recherche ||
+        normaliserComparaisonElement(el.serial) === recherche ||
+        normaliserComparaisonElement(el.otherserial) === recherche ||
+        normaliserComparaisonElement(el.inventory_number) === recherche
     );
-    if (trouve) return { ...trouve, itemtype: type };
+
+    if (trouve) {
+      ajouterLog(`Recherche ${nomElement} dans ${type} : trouvé #${trouve.id}`);
+      return { ...trouve, itemtype: type };
+    }
+
+    ajouterLog(`Recherche ${nomElement} dans ${type} : non trouvé`);
   }
 
   return null;
@@ -781,7 +828,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
     const refTicket = (ligne.Ref_Ticket || '').trim();
     const titre = (ligne.Titre || '').trim();
     const description = (ligne.Description || '').trim();
-    const itemsColonne = (ligne.Items || '').trim();
+    const itemsColonne = String(ligne.Items ?? '').trim();
     const { dateGLPI, avertissement: avertissementDate } = construireDateTicketDepuisCsv(ligne);
 
     if (!estValide(titre)) {
@@ -851,7 +898,13 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 
         const nomsElements = extraireNomsElementsDepuisItems(itemsColonne);
         resultat.elementsDemandes += nomsElements.length;
-        ajouterLog(`Ticket ${titre} : ${nomsElements.length} éléments demandés`);
+        ajouterLog(`Ticket ${titre} : Items extraits = ${nomsElements.join(', ') || '-'}`);
+        ajouterLog(`Ticket ${titre} : nombre éléments extraits = ${nomsElements.length}`);
+
+        const doublonsNomsElements = recupererDoublonsNomsElements(nomsElements);
+        for (const nomElementDoublon of doublonsNomsElements) {
+          ajouterLog(`Doublon ignoré : ${nomElementDoublon}`);
+        }
 
         const nomsElementsUniques = supprimerDoublonsNomsElements(nomsElements);
         resultat.elementsUniques += nomsElementsUniques.length;
@@ -862,10 +915,10 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 
         for (const nomElement of nomsElementsUniques) {
           ajouterLog(`Recherche élément : ${nomElement}`);
-          const element = await rechercherElementParNomOuInventaire(nomElement);
+          const element = await rechercherElementParNomOuInventaire(nomElement, ajouterLog);
 
           if (!element) {
-            const avert = `Élément introuvable pour association : ${nomElement}, ticket : ${titre}`;
+            const avert = `Élément introuvable : ${nomElement}`;
             ajouterLog(avert);
             resultat.avertissements.push(avert);
             resultat.elementsIntrouvables++;
@@ -875,12 +928,14 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
           ajouterLog(`Élément trouvé : ${element.itemtype} #${element.id}`);
 
           if (relationItemTicketDejaExistante(relationsExistantes, element)) {
-            ajouterLog(`Relation déjà existante ignorée : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
+            ajouterLog(`POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : relation déjà existante`);
+            ajouterLog(`Relation déjà existante : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
             resultat.associationsDejaExistantes++;
             continue;
           }
 
           try {
+            ajouterLog(`Tentative POST /Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
             await clientGlpiLegacy.post('/Item_Ticket', {
               input: {
                 tickets_id: idTicket,
@@ -888,12 +943,13 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
                 items_id: element.id,
               },
             });
-            ajouterLog(`Relation Item_Ticket créée : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
+            ajouterLog(`POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : OK`);
+            ajouterLog(`Relation créée : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
             resultat.associationsCreees++;
             resultat.associations++;
             relationsExistantes.push({ itemtype: element.itemtype, items_id: element.id });
           } catch (erreurAssoc) {
-            const avert = `Erreur association ${nomElement} → ticket ${titre} : ${erreurAssoc.message}`;
+            const avert = `POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : ${formaterErreurApiComplete(erreurAssoc)}`;
             ajouterLog(avert);
             resultat.avertissements.push(avert);
           }
@@ -920,10 +976,7 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
   const ticketsExistants = await chargerTousLesTickets();
 
   for (const ligne of donnees) {
-    const numTicket = (ligne.Num_Ticket || '').trim();
-    const durationSeconde = ligne.Duration_second;
-    const coutTemps = ligne.Time_Cost;
-    const coutFixe = ligne.Fixed_Cost;
+    const numTicket = String(ligne.Num_Ticket ?? '').trim();
 
     if (!estValide(numTicket)) {
       ajouterLog('Ligne coût ignorée : Num_Ticket manquant');
@@ -956,18 +1009,18 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
 
     try {
       // Convertir toutes les valeurs numériques — jamais null ni NaN envoyé à GLPI
-      const valeurCoutTemps = convertirNombreCsv(coutTemps, 0);
-      const valeurCoutFixe = convertirNombreCsv(coutFixe, 0);
-      const valeurActiontime = convertirNombreCsv(durationSeconde, 0);
+      const valeurActiontime = convertirNombreCsv(ligne.Duration_second, 0);
+      const valeurCoutTemps = convertirNombreCsv(ligne.Time_Cost, 0);
+      const valeurCoutFixe = convertirNombreCsv(ligne.Fixed_Cost, 0);
 
       ajouterLog(`Coût Ref ${numTicket} : actiontime=${valeurActiontime}, cost_time=${valeurCoutTemps}, cost_fixed=${valeurCoutFixe}`);
 
       const corpsCout = {
         tickets_id: ticket.id,
         name: `${MARQUAGE_IMPORT} - Ref ${numTicket}`,
+        actiontime: valeurActiontime,
         cost_time: valeurCoutTemps,
         cost_fixed: valeurCoutFixe,
-        actiontime: valeurActiontime,
         entities_id: 0,
       };
 

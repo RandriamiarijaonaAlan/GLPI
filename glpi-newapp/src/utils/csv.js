@@ -21,6 +21,39 @@ function detecterSeparateur(texteCsv) {
   return nbPointVirgule >= nbVirgule ? ';' : ',';
 }
 
+// Découpe une ligne CSV en respectant les champs entre guillemets
+function decouperLigneCsv(ligne, separateur) {
+  const valeurs = [];
+  let valeurCourante = '';
+  let dansGuillemets = false;
+
+  for (let index = 0; index < ligne.length; index++) {
+    const caractere = ligne[index];
+    const caractereSuivant = ligne[index + 1];
+
+    if (caractere === '"') {
+      if (dansGuillemets && caractereSuivant === '"') {
+        valeurCourante += '"';
+        index++;
+      } else {
+        dansGuillemets = !dansGuillemets;
+      }
+      continue;
+    }
+
+    if (caractere === separateur && !dansGuillemets) {
+      valeurs.push(valeurCourante.trim());
+      valeurCourante = '';
+      continue;
+    }
+
+    valeurCourante += caractere;
+  }
+
+  valeurs.push(valeurCourante.trim());
+  return valeurs;
+}
+
 // Convertit un texte CSV en tableau d'objets JSON
 // Supporte UTF-8, séparateur ; et ,, ignore les lignes vides et nettoie les espaces
 export function convertirCsvEnJson(texteCsv) {
@@ -44,7 +77,7 @@ export function convertirCsvEnJson(texteCsv) {
     return [];
   }
 
-  const colonnes = lignes[indexEntete].split(separateur).map((col) => col.trim());
+  const colonnes = decouperLigneCsv(lignes[indexEntete], separateur).map((col) => col.trim());
 
   const donnees = [];
   for (let i = indexEntete + 1; i < lignes.length; i++) {
@@ -55,7 +88,7 @@ export function convertirCsvEnJson(texteCsv) {
       continue;
     }
 
-    const valeurs = ligne.split(separateur);
+    const valeurs = decouperLigneCsv(ligne, separateur);
     const objet = {};
 
     colonnes.forEach((colonne, index) => {

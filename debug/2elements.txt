@@ -1,0 +1,124 @@
+Corrige et debug uniquement l’association multiple Item_Ticket pendant l’import CSV tickets.
+
+Problème :
+Le CSV contient :
+Items = ["PC-ADM-001","MN-FORM-002"]
+
+Mais dans GLPI, le ticket affiche seulement :
+PC-ADM-001
+
+Il faut obligatoirement associer aussi :
+MN-FORM-002
+
+À faire :
+
+1. Ajouter un log très détaillé pour chaque ticket importé
+
+Afficher :
+- Items brut reçu depuis CSV
+- Items après nettoyage
+- Nombre d’items extraits
+- Pour chaque item :
+  - recherche dans Computer
+  - recherche dans Monitor
+  - recherche dans Printer
+  - recherche dans Phone
+  - recherche dans NetworkEquipment
+  - recherche dans Peripheral
+  - résultat trouvé ou non
+  - tentative POST /Item_Ticket
+  - succès ou erreur API complète
+
+Exemple log attendu :
+Ticket Michauffe : Items brut = ["PC-ADM-001","MN-FORM-002"]
+Ticket Michauffe : Items extraits = PC-ADM-001, MN-FORM-002
+Recherche PC-ADM-001 dans Computer : trouvé #39
+POST Item_Ticket Ticket #18 → Computer #39 : OK
+Recherche MN-FORM-002 dans Computer : non trouvé
+Recherche MN-FORM-002 dans Monitor : trouvé #6
+POST Item_Ticket Ticket #18 → Monitor #6 : OK
+
+2. Corriger la fonction extraireNomsElementsDepuisItems()
+
+Elle doit retourner exactement :
+["PC-ADM-001", "MN-FORM-002"]
+
+Pour :
+["PC-ADM-001","MN-FORM-002"]
+
+Attention :
+Ne pas retourner seulement le premier élément.
+Ne pas garder les crochets.
+Ne pas garder les guillemets.
+
+3. Corriger la recherche d’élément
+
+Créer/corriger :
+rechercherElementParNomOuInventaire(nomElement)
+
+La fonction doit chercher successivement dans :
+- Computer
+- Monitor
+- Printer
+- Phone
+- NetworkEquipment
+- Peripheral
+
+Pour chaque type :
+GET /TYPE?range=0-999&expand_dropdowns=true
+
+Comparer nomElement avec :
+- name
+- serial
+- otherserial
+- inventory_number
+
+Comparaison :
+- trim
+- insensible à la casse
+- ne pas tenir compte des espaces inutiles
+
+4. Corriger la création Item_Ticket
+
+Pour chaque élément trouvé :
+POST /Item_Ticket
+
+Body :
+{
+  "input": {
+    "tickets_id": idTicket,
+    "itemtype": element.itemtype,
+    "items_id": element.id
+  }
+}
+
+Important :
+Il faut créer une relation par élément trouvé.
+Donc pour deux éléments, il faut faire deux POST /Item_Ticket.
+
+5. Si la relation existe déjà
+
+Vérifier :
+GET /Item_Ticket?searchText[tickets_id]=ID_TICKET&expand_dropdowns=true
+
+Si relation déjà présente :
+- ne pas recréer
+- log : relation déjà existante
+
+6. Ne jamais arrêter après le premier succès
+
+Même si PC-ADM-001 est trouvé et lié, continuer avec MN-FORM-002.
+
+7. Ne modifier que :
+- src/api/importApi.js
+- éventuellement src/backoffice/pages/ImportFichiers.jsx pour afficher les logs
+
+Ne pas modifier :
+- dashboard
+- réinitialisation
+- auth
+- frontoffice
+- images
+- coûts
+
+Fonctions, variables et commentaires en français.
