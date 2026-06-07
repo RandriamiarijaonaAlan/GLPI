@@ -12,22 +12,10 @@ const typesElementsMetier = [
 ];
 
 function convertirEnTableau(donnees) {
-  if (Array.isArray(donnees)) {
-    return donnees;
-  }
-
-  if (Array.isArray(donnees?.data)) {
-    return donnees.data;
-  }
-
-  if (Array.isArray(donnees?.items)) {
-    return donnees.items;
-  }
-
-  if (Array.isArray(donnees?.member)) {
-    return donnees.member;
-  }
-
+  if (Array.isArray(donnees)) return donnees;
+  if (Array.isArray(donnees?.data)) return donnees.data;
+  if (Array.isArray(donnees?.items)) return donnees.items;
+  if (Array.isArray(donnees?.member)) return donnees.member;
   return [];
 }
 
@@ -55,12 +43,228 @@ function recupererMessageErreur(erreur) {
   return erreur?.message || 'Erreur inconnue';
 }
 
-function estErreurIntrouvable(erreur) {
-  const statutHttp = erreur.response?.status;
-  const message = JSON.stringify(erreur.response?.data || erreur.message || '').toLowerCase();
-
-  return statutHttp === 404 || message.includes('not found') || message.includes('introuvable');
+// Formate l'erreur avec le statut HTTP et la réponse GLPI brute pour le journal
+function formaterErreurDetaillee(erreur) {
+  const statut = erreur.response?.status;
+  const corps = erreur.response?.data;
+  const messageApi = corps ? JSON.stringify(corps) : (erreur.message || 'Erreur inconnue');
+  return statut ? `HTTP ${statut} - ${messageApi}` : messageApi;
 }
+
+// Retourne true si l'erreur signifie que la ressource n'existe pas (404 ou NOT_FOUND)
+function estErreurIntrouvable(erreur) {
+  const statut = erreur.response?.status;
+  const corps = JSON.stringify(erreur.response?.data || erreur.message || '').toLowerCase();
+  return (
+    statut === 404 ||
+    corps.includes('not found') ||
+    corps.includes('introuvable') ||
+    corps.includes('item_not_found') ||
+    corps.includes('error_item_not_found')
+  );
+}
+
+// ─── VÉRIFICATION ─────────────────────────────────────────────────────────────
+
+// Vérifie si un ticket existe encore dans GLPI
+// Retourne { supprime, alaCorbeille } — essaie v2 puis v1 en fallback
+export async function verifierSuppressionTicket(idTicket) {
+  // Vérification via API v2
+  try {
+    const reponse = await clientGlpiV2.get(`/Assistance/Ticket/${idTicket}`);
+    const donnees = reponse.data;
+    const alaCorbeille = donnees?.is_deleted === 1 || donnees?.is_deleted === true;
+    return { supprime: false, alaCorbeille };
+  } catch (erreur) {
+    if (estErreurIntrouvable(erreur)) {
+      return { supprime: true, alaCorbeille: false };
+    }
+  }
+
+  // Fallback vérification via API v1
+  try {
+    const reponse = await clientGlpiLegacy.get(`/Ticket/${idTicket}`);
+    const donnees = reponse.data;
+    const alaCorbeille = donnees?.is_deleted === 1 || donnees?.is_deleted === true;
+    return { supprime: false, alaCorbeille };
+  } catch (erreurV1) {
+    if (estErreurIntrouvable(erreurV1)) {
+      return { supprime: true, alaCorbeille: false };
+    }
+  }
+
+  return { supprime: false, alaCorbeille: false };
+}
+
+// Vérifie si un élément/asset existe encore dans GLPI
+// Retourne { supprime, alaCorbeille } — essaie v2 puis v1 en fallback
+export async function verifierSuppressionElement(element) {
+  // Vérification via API v2
+  try {
+    const reponse = await clientGlpiV2.get(`/Assets/${element.itemtype}/${element.id}`);
+    const donnees = reponse.data;
+    const alaCorbeille = donnees?.is_deleted === 1 || donnees?.is_deleted === true;
+    return { supprime: false, alaCorbeille };
+  } catch (erreur) {
+    if (estErreurIntrouvable(erreur)) {
+      return { supprime: true, alaCorbeille: false };
+    }
+  }
+
+  // Fallback vérification via API v1
+  try {
+    const reponse = await clientGlpiLegacy.get(`/${element.itemtype}/${element.id}`);
+    const donnees = reponse.data;
+    const alaCorbeille = donnees?.is_deleted === 1 || donnees?.is_deleted === true;
+    return { supprime: false, alaCorbeille };
+  } catch (erreurV1) {
+    if (estErreurIntrouvable(erreurV1)) {
+      return { supprime: true, alaCorbeille: false };
+    }
+  }
+
+  return { supprime: false, alaCorbeille: false };
+}
+
+// ─── SUPPRESSION ROBUSTE ───────────────────────────────────────────────────────
+
+// Supprime un ticket avec fallback progressif :
+// 1. API v2  →  2. API v1 force_purge  →  3. API v1 simple + force_purge
+// Retourne true si le ticket est effectivement supprimé
+export async function supprimerTicketRobuste(idTicket, ajouterLog) {
+  // Étape 1 — suppression via API v2
+  ajouterLog(`Suppression Ticket #${idTicket} via API v2`);
+  try {
+    await clientGlpiV2.delete(`/Assistance/Ticket/${idTicket}`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v2 Ticket #${idTicket} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification après API v2
+  ajouterLog(`Vérification Ticket #${idTicket} après API v2`);
+  let verification = await verifierSuppressionTicket(idTicket);
+  if (verification.supprime) {
+    ajouterLog(`Ticket #${idTicket} suppression confirmée`);
+    return true;
+  }
+
+  if (verification.alaCorbeille) {
+    ajouterLog(`Ticket #${idTicket} mis à la corbeille mais pas supprimé définitivement`);
+  } else {
+    ajouterLog(`Ticket #${idTicket} existe encore, tentative API v1 force_purge`);
+  }
+
+  // Étape 2 — suppression via API v1 force_purge
+  ajouterLog(`Suppression Ticket #${idTicket} via API v1 force_purge`);
+  try {
+    await clientGlpiLegacy.delete(`/Ticket/${idTicket}?force_purge=true`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 force_purge Ticket #${idTicket} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification après force_purge
+  ajouterLog(`Vérification Ticket #${idTicket} après force_purge`);
+  verification = await verifierSuppressionTicket(idTicket);
+  if (verification.supprime) {
+    ajouterLog(`Ticket #${idTicket} suppression confirmée`);
+    return true;
+  }
+
+  // Étape 3 — suppression simple v1 puis force_purge (mise à la corbeille d'abord)
+  ajouterLog(`Ticket #${idTicket} existe encore, tentative API v1 suppression simple`);
+  try {
+    await clientGlpiLegacy.delete(`/Ticket/${idTicket}`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 simple Ticket #${idTicket} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  try {
+    await clientGlpiLegacy.delete(`/Ticket/${idTicket}?force_purge=true`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 force_purge final Ticket #${idTicket} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification finale
+  verification = await verifierSuppressionTicket(idTicket);
+  if (verification.supprime) {
+    ajouterLog(`Ticket #${idTicket} suppression confirmée`);
+    return true;
+  }
+
+  ajouterLog(`Ticket #${idTicket} non supprimé après toutes les tentatives`);
+  return false;
+}
+
+// Supprime un élément/asset avec fallback progressif :
+// 1. API v2  →  2. API v1 force_purge  →  3. API v1 simple + force_purge
+// Retourne true si l'élément est effectivement supprimé
+export async function supprimerElementRobuste(element, ajouterLog) {
+  const libelle = `${element.itemtype} #${element.id}`;
+
+  // Étape 1 — suppression via API v2
+  ajouterLog(`Suppression ${libelle} via API v2`);
+  try {
+    await clientGlpiV2.delete(`/Assets/${element.itemtype}/${element.id}`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v2 ${libelle} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification après API v2
+  ajouterLog(`Vérification ${libelle} après API v2`);
+  let verification = await verifierSuppressionElement(element);
+  if (verification.supprime) {
+    ajouterLog(`${libelle} suppression confirmée`);
+    return true;
+  }
+
+  if (verification.alaCorbeille) {
+    ajouterLog(`${libelle} mis à la corbeille mais pas supprimé définitivement`);
+  } else {
+    ajouterLog(`${libelle} existe encore, tentative API v1 force_purge`);
+  }
+
+  // Étape 2 — suppression via API v1 force_purge
+  ajouterLog(`Suppression ${libelle} via API v1 force_purge`);
+  try {
+    await clientGlpiLegacy.delete(`/${element.itemtype}/${element.id}?force_purge=true`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 force_purge ${libelle} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification après force_purge
+  ajouterLog(`Vérification ${libelle} après force_purge`);
+  verification = await verifierSuppressionElement(element);
+  if (verification.supprime) {
+    ajouterLog(`${libelle} suppression confirmée`);
+    return true;
+  }
+
+  // Étape 3 — suppression simple v1 puis force_purge (mise à la corbeille d'abord)
+  ajouterLog(`${libelle} existe encore, tentative API v1 suppression simple`);
+  try {
+    await clientGlpiLegacy.delete(`/${element.itemtype}/${element.id}`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 simple ${libelle} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  try {
+    await clientGlpiLegacy.delete(`/${element.itemtype}/${element.id}?force_purge=true`);
+  } catch (erreur) {
+    ajouterLog(`Erreur API v1 force_purge final ${libelle} : ${formaterErreurDetaillee(erreur)}`);
+  }
+
+  // Vérification finale
+  verification = await verifierSuppressionElement(element);
+  if (verification.supprime) {
+    ajouterLog(`${libelle} suppression confirmée`);
+    return true;
+  }
+
+  ajouterLog(`${libelle} non supprimé après toutes les tentatives`);
+  return false;
+}
+
+// ─── RÉCUPÉRATION ─────────────────────────────────────────────────────────────
 
 export async function recupererTicketsV2() {
   const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=500');
@@ -128,6 +332,8 @@ export async function recupererModulesDisponibles() {
   };
 }
 
+// ─── SUPPRESSION DES RELATIONS ET COÛTS ───────────────────────────────────────
+
 export async function supprimerRelationItemTicketV1(id) {
   const reponse = await clientGlpiLegacy.delete(`/Item_Ticket/${id}`);
 
@@ -140,35 +346,7 @@ export async function supprimerCoutTicketV1(id) {
   return reponse.data;
 }
 
-export async function supprimerTicketV2(id) {
-  const reponse = await clientGlpiV2.delete(`/Assistance/Ticket/${id}`);
-
-  return reponse.data;
-}
-
-export async function supprimerElementV2(element) {
-  const reponse = await clientGlpiV2.delete(`/Assets/${element.itemtype}/${element.id}`);
-
-  return reponse.data;
-}
-
-export async function verifierSuppressionTicketV2(id) {
-  try {
-    await clientGlpiV2.get(`/Assistance/Ticket/${id}`);
-    return false;
-  } catch (erreur) {
-    return estErreurIntrouvable(erreur);
-  }
-}
-
-export async function verifierSuppressionElementV2(element) {
-  try {
-    await clientGlpiV2.get(`/Assets/${element.itemtype}/${element.id}`);
-    return false;
-  } catch (erreur) {
-    return estErreurIntrouvable(erreur);
-  }
-}
+// ─── RÉINITIALISATION COMPLÈTE ────────────────────────────────────────────────
 
 export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
   const erreurs = [];
@@ -207,6 +385,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
   resume.coutsTrouves = couts.length;
   resume.elementsTrouves = elements.length;
 
+  // Suppression des relations Item_Ticket (API v1)
   ajouterLog(`${relations.length} relations Item_Ticket récupérées`);
   for (const relation of relations) {
     try {
@@ -220,6 +399,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
     }
   }
 
+  // Suppression des coûts TicketCost (API v1 avec force_purge)
   ajouterLog(`${couts.length} coûts TicketCost récupérés`);
   for (const cout of couts) {
     try {
@@ -233,41 +413,41 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog) {
     }
   }
 
+  // Suppression des tickets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${tickets.length} tickets récupérés via API v2`);
   for (const ticket of tickets) {
     try {
-      await supprimerTicketV2(ticket.id);
-
-      if (await verifierSuppressionTicketV2(ticket.id)) {
+      const supprime = await supprimerTicketRobuste(ticket.id, ajouterLog);
+      if (supprime) {
         resume.ticketsSupprimes += 1;
-        ajouterLog(`Ticket #${ticket.id} suppression confirmée`);
       } else {
         resume.ticketsNonSupprimes += 1;
-        ajouterLog(`Ticket #${ticket.id} existe encore après suppression`);
+        const message = `Ticket #${ticket.id} non supprimé après toutes les tentatives`;
+        erreurs.push(message);
       }
     } catch (erreur) {
       resume.ticketsNonSupprimes += 1;
-      const message = `Ticket #${ticket.id} : ${recupererMessageErreur(erreur)}`;
+      const message = `Ticket #${ticket.id} : ${formaterErreurDetaillee(erreur)}`;
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
   }
 
+  // Suppression des éléments/assets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${elements.length} éléments/assets récupérés via API v2`);
   for (const element of elements) {
     try {
-      await supprimerElementV2(element);
-
-      if (await verifierSuppressionElementV2(element)) {
+      const supprime = await supprimerElementRobuste(element, ajouterLog);
+      if (supprime) {
         resume.elementsSupprimes += 1;
-        ajouterLog(`Élément ${element.itemtype} #${element.id} suppression confirmée`);
       } else {
         resume.elementsNonSupprimes += 1;
-        ajouterLog(`Élément ${element.itemtype} #${element.id} existe encore après suppression`);
+        const message = `${element.itemtype} #${element.id} non supprimé après toutes les tentatives`;
+        erreurs.push(message);
       }
     } catch (erreur) {
       resume.elementsNonSupprimes += 1;
-      const message = `${element.itemtype} #${element.id} : ${recupererMessageErreur(erreur)}`;
+      const message = `${element.itemtype} #${element.id} : ${formaterErreurDetaillee(erreur)}`;
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }

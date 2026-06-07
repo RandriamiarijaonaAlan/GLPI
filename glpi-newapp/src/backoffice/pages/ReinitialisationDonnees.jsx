@@ -161,14 +161,24 @@ export default function ReinitialisationDonnees() {
             <div className="erreurs-reinitialisation">
               <h2>Erreurs rencontrées</h2>
               <ul>
-                {resume.erreurs.map((messageErreur) => (
-                  <li key={messageErreur}>{messageErreur}</li>
+                {resume.erreurs.map((messageErreur, index) => (
+                  <li key={index}>{messageErreur}</li>
                 ))}
               </ul>
             </div>
-          ) : (
+          ) : null}
+
+          {resume.ticketsNonSupprimes === 0 && resume.elementsNonSupprimes === 0 && resume.erreurs.length === 0 ? (
             <p className="message-succes">Réinitialisation terminée sans erreur.</p>
-          )}
+          ) : null}
+
+          {resume.ticketsNonSupprimes > 0 || resume.elementsNonSupprimes > 0 ? (
+            <p className="message-erreur">
+              Réinitialisation terminée avec éléments non supprimés
+              {resume.ticketsNonSupprimes > 0 ? ` (${resume.ticketsNonSupprimes} ticket(s))` : ''}
+              {resume.elementsNonSupprimes > 0 ? ` (${resume.elementsNonSupprimes} élément(s))` : ''}.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
