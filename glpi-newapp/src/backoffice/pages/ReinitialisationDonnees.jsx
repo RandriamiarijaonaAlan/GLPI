@@ -1,29 +1,45 @@
 import { useState } from 'react';
 import {
-  analyserDonneesConcernees,
-  reinitialiserDonneesConcernees,
+  recupererModulesDisponibles,
+  reinitialiserToutesLesDonneesMetier,
 } from '../../api/reinitialisationApi';
 
 const messageConfirmation =
-  'Attention : cette action supprimera les tickets concernés, leurs coûts, leurs associations, puis les éléments concernés. Continuer ?';
+  'Attention : cette action supprimera toutes les données métier détectées : tickets, associations, coûts et éléments du parc. Continuer ?';
 
 export default function ReinitialisationDonnees() {
-  const [analyse, definirAnalyse] = useState(null);
+  const [modules, definirModules] = useState([]);
+  const [journal, definirJournal] = useState([]);
   const [resume, definirResume] = useState(null);
   const [chargementAnalyse, definirChargementAnalyse] = useState(false);
   const [chargementReinitialisation, definirChargementReinitialisation] = useState(false);
   const [erreur, definirErreur] = useState('');
 
+  function ajouterLog(message) {
+    definirJournal((journalCourant) => [
+      ...journalCourant,
+      `${new Date().toLocaleTimeString('fr-FR')} - ${message}`,
+    ]);
+  }
+
   async function analyserDonnees() {
     definirChargementAnalyse(true);
     definirErreur('');
     definirResume(null);
+    definirJournal([]);
+    ajouterLog('Analyse des données GLPI démarrée');
 
     try {
-      const resultatAnalyse = await analyserDonneesConcernees();
-      definirAnalyse(resultatAnalyse);
+      const donnees = await recupererModulesDisponibles();
+      definirModules(donnees.modules);
+      ajouterLog('Analyse terminée');
+      donnees.modules.forEach((module) => {
+        ajouterLog(`${module.libelle} : ${module.nombre}`);
+      });
     } catch (erreurAnalyse) {
-      definirErreur(`Impossible d'analyser les données concernées : ${erreurAnalyse.message}`);
+      const message = `Erreur analyse : ${erreurAnalyse.message}`;
+      definirErreur(message);
+      ajouterLog(message);
     } finally {
       definirChargementAnalyse(false);
     }
@@ -37,83 +53,63 @@ export default function ReinitialisationDonnees() {
     definirChargementReinitialisation(true);
     definirErreur('');
     definirResume(null);
+    ajouterLog('Réinitialisation de toutes les données métier démarrée');
 
     try {
-      const resultatReinitialisation = await reinitialiserDonneesConcernees();
-      definirResume(resultatReinitialisation);
+      const resultat = await reinitialiserToutesLesDonneesMetier(ajouterLog);
+      definirResume(resultat);
+      ajouterLog('Réinitialisation terminée');
 
-      // Une nouvelle analyse évite d'afficher des compteurs devenus obsolètes.
-      const nouvelleAnalyse = await analyserDonneesConcernees();
-      definirAnalyse(nouvelleAnalyse);
+      const donnees = await recupererModulesDisponibles();
+      definirModules(donnees.modules);
+      ajouterLog('Modules disponibles actualisés');
     } catch (erreurReinitialisation) {
-      definirErreur(
-        `Impossible de finaliser la réinitialisation : ${erreurReinitialisation.message}`,
-      );
+      const message = `Erreur réinitialisation : ${erreurReinitialisation.message}`;
+      definirErreur(message);
+      ajouterLog(message);
     } finally {
       definirChargementReinitialisation(false);
     }
   }
 
-  const ticketsTrouves = analyse?.ticketsTrouves?.length ?? 0;
-  const elementsTrouves = analyse?.elementsTrouves?.length ?? 0;
-  const aucuneDonneeTrouvee = Boolean(analyse) && ticketsTrouves === 0 && elementsTrouves === 0;
-
   return (
     <main className="backoffice-page">
       <div className="page-header">
         <div>
-          <h1>Réinitialisation des données</h1>
-          <p>
-            Cette action supprime uniquement les tickets, associations, coûts et éléments
-            explicitement liés à NewAPP ou aux références CSV configurées.
-          </p>
+          <h1>Réinitialisation des données GLPI</h1>
+          <p>API v1 pour les relations/coûts, API v2 pour les tickets et les assets.</p>
         </div>
+        <button type="button" onClick={analyserDonnees} disabled={chargementAnalyse}>
+          {chargementAnalyse ? 'Analyse en cours...' : 'Analyser les données GLPI'}
+        </button>
       </div>
 
-      <section className="detail-panel">
-        <div className="button-row">
-          <button type="button" onClick={analyserDonnees} disabled={chargementAnalyse}>
-            {chargementAnalyse ? 'Analyse en cours...' : 'Analyser les données concernées'}
-          </button>
-          <button
-            type="button"
-            onClick={reinitialiserDonnees}
-            disabled={chargementReinitialisation || chargementAnalyse || aucuneDonneeTrouvee}
-          >
-            {chargementReinitialisation
-              ? 'Réinitialisation en cours...'
-              : 'Réinitialiser les données concernées'}
-          </button>
-        </div>
+      {erreur ? <p className="message-erreur">{erreur}</p> : null}
 
-        {erreur ? <p className="message-erreur">{erreur}</p> : null}
+      <section className="detail-panel">
+        <h2>Modules disponibles</h2>
+        <div className="stats-grid">
+          {modules.length === 0 ? <p>Aucune analyse lancée.</p> : null}
+          {modules.map((module) => (
+            <article className="stat-card" key={module.cle}>
+              <span>{module.libelle}</span>
+              <strong>{module.nombre}</strong>
+            </article>
+          ))}
+        </div>
       </section>
 
-      {analyse ? (
-        <section className="stats-grid">
-          <article className="stat-card">
-            <span>Tickets trouvés</span>
-            <strong>{ticketsTrouves}</strong>
-          </article>
-          <article className="stat-card">
-            <span>Éléments trouvés</span>
-            <strong>{elementsTrouves}</strong>
-          </article>
-        </section>
-      ) : null}
-
-      {analyse?.message ? <p>{analyse.message}</p> : null}
-
-      {analyse?.avertissements?.length > 0 ? (
-        <section className="detail-panel">
-          <h2>Avertissements</h2>
-          <ul className="liste-avertissements">
-            {analyse.avertissements.map((avertissement) => (
-              <li key={avertissement}>{avertissement}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <div className="button-row">
+        <button
+          type="button"
+          onClick={reinitialiserDonnees}
+          disabled={chargementAnalyse || chargementReinitialisation}
+        >
+          {chargementReinitialisation
+            ? 'Réinitialisation en cours...'
+            : 'Réinitialiser toutes les données métier'}
+        </button>
+      </div>
 
       {resume ? (
         <section className="detail-panel">
@@ -128,11 +124,23 @@ export default function ReinitialisationDonnees() {
               <dd>{resume.ticketsSupprimes}</dd>
             </div>
             <div>
-              <dt>Relations Item_Ticket supprimées</dt>
+              <dt>Tickets non supprimés</dt>
+              <dd>{resume.ticketsNonSupprimes}</dd>
+            </div>
+            <div>
+              <dt>Relations trouvées</dt>
+              <dd>{resume.relationsTrouvees}</dd>
+            </div>
+            <div>
+              <dt>Relations supprimées</dt>
               <dd>{resume.relationsSupprimees}</dd>
             </div>
             <div>
-              <dt>Coûts TicketCost supprimés</dt>
+              <dt>Coûts trouvés</dt>
+              <dd>{resume.coutsTrouves}</dd>
+            </div>
+            <div>
+              <dt>Coûts supprimés</dt>
               <dd>{resume.coutsSupprimes}</dd>
             </div>
             <div>
@@ -143,18 +151,11 @@ export default function ReinitialisationDonnees() {
               <dt>Éléments supprimés</dt>
               <dd>{resume.elementsSupprimes}</dd>
             </div>
-          </dl>
-
-          {resume.avertissements.length > 0 ? (
-            <div className="avertissements-reinitialisation">
-              <h2>Avertissements</h2>
-              <ul>
-                {resume.avertissements.map((avertissement) => (
-                  <li key={avertissement}>{avertissement}</li>
-                ))}
-              </ul>
+            <div>
+              <dt>Éléments non supprimés</dt>
+              <dd>{resume.elementsNonSupprimes}</dd>
             </div>
-          ) : null}
+          </dl>
 
           {resume.erreurs.length > 0 ? (
             <div className="erreurs-reinitialisation">
@@ -170,6 +171,16 @@ export default function ReinitialisationDonnees() {
           )}
         </section>
       ) : null}
+
+      <section className="detail-panel">
+        <h2>Journal</h2>
+        <div className="journal-reinitialisation" aria-live="polite">
+          {journal.length === 0 ? <p>Aucune action enregistrée.</p> : null}
+          {journal.map((message, index) => (
+            <p key={`${message}-${index}`}>{message}</p>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

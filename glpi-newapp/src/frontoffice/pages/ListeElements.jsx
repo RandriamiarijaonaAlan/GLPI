@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { recupererTousLesElements } from '../../api/assetsApi';
+import { afficherValeurGlpi } from '../../utils/affichage';
 
 const filtresInitiaux = {
   nom: '',
@@ -11,27 +12,15 @@ const filtresInitiaux = {
 };
 
 function normaliserValeur(valeur) {
-  return String(valeur ?? '').trim().toLowerCase();
-}
-
-function recupererLibelleChamp(valeur) {
-  if (valeur === null || valeur === undefined || valeur === '') {
-    return '-';
-  }
-
-  if (typeof valeur === 'object') {
-    return valeur.name || valeur.completename || valeur.id || '-';
-  }
-
-  return valeur;
+  return String(afficherValeurGlpi(valeur) ?? '').trim().toLowerCase();
 }
 
 function recupererStatut(element) {
-  return recupererLibelleChamp(element.states_id);
+  return afficherValeurGlpi(element.statut || element.states_id);
 }
 
 function recupererLocalisation(element) {
-  return recupererLibelleChamp(element.locations_id);
+  return afficherValeurGlpi(element.localisation || element.locations_id);
 }
 
 function elementCorrespondAuxFiltres(element, filtres) {
@@ -196,10 +185,10 @@ export default function ListeElements() {
                   {elementsFiltres.map((element) => (
                     <tr key={`${element.itemtype}-${element.id}`}>
                       <td>{element.id}</td>
-                      <td>{element.name || '-'}</td>
-                      <td>{element.typeAffiche || element.itemtype}</td>
+                      <td>{afficherValeurGlpi(element.name)}</td>
+                      <td>{afficherValeurGlpi(element.typeAffiche || element.itemtype)}</td>
                       <td>{recupererStatut(element)}</td>
-                      <td>{element.serial || '-'}</td>
+                      <td>{afficherValeurGlpi(element.serial)}</td>
                       <td>{recupererLocalisation(element)}</td>
                       <td>
                         <button type="button" onClick={() => creerTicketPourElement(element)}>

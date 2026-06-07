@@ -2,35 +2,40 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { libellesPriorite, libellesStatut, libellesType } from '../../api/dashboardApi';
 import { recupererElementsTicket, recupererTicketParId } from '../../api/ticketsApi';
+import { afficherValeurGlpi } from '../../utils/affichage';
 
-function formatDate(value) {
-  return value ? new Date(value).toLocaleString('fr-FR') : '-';
+function formaterDate(valeur) {
+  return valeur ? new Date(valeur).toLocaleString('fr-FR') : '-';
+}
+
+function afficherLibelleGlpi(libelles, valeur) {
+  return libelles[valeur] || afficherValeurGlpi(valeur);
 }
 
 export default function DetailTicket() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [ticket, setTicket] = useState(null);
-  const [elements, setElements] = useState([]);
-  const [chargement, setChargement] = useState(true);
-  const [erreur, setErreur] = useState('');
+  const [ticket, definirTicket] = useState(null);
+  const [elements, definirElements] = useState([]);
+  const [chargement, definirChargement] = useState(true);
+  const [erreur, definirErreur] = useState('');
 
   useEffect(() => {
     async function chargerTicket() {
-      setChargement(true);
-      setErreur('');
+      definirChargement(true);
+      definirErreur('');
 
       try {
         const [donnees, elementsLies] = await Promise.all([
           recupererTicketParId(id),
           recupererElementsTicket(id),
         ]);
-        setTicket(donnees);
-        setElements(elementsLies);
+        definirTicket(donnees);
+        definirElements(elementsLies);
       } catch (erreurChargement) {
-        setErreur(erreurChargement.message);
+        definirErreur(erreurChargement.message);
       } finally {
-        setChargement(false);
+        definirChargement(false);
       }
     }
 
@@ -58,31 +63,31 @@ export default function DetailTicket() {
             </div>
             <div>
               <dt>Titre</dt>
-              <dd>{ticket.name || '-'}</dd>
+              <dd>{afficherValeurGlpi(ticket.name)}</dd>
             </div>
             <div>
               <dt>Description</dt>
-              <dd>{ticket.content || '-'}</dd>
+              <dd>{afficherValeurGlpi(ticket.content)}</dd>
             </div>
             <div>
               <dt>Statut</dt>
-              <dd>{libellesStatut[ticket.status] || ticket.status || '-'}</dd>
+              <dd>{afficherLibelleGlpi(libellesStatut, ticket.status)}</dd>
             </div>
             <div>
               <dt>Type</dt>
-              <dd>{libellesType[ticket.type] || ticket.type || '-'}</dd>
+              <dd>{afficherLibelleGlpi(libellesType, ticket.type)}</dd>
             </div>
             <div>
               <dt>Priorité</dt>
-              <dd>{libellesPriorite[ticket.priority] || ticket.priority || '-'}</dd>
+              <dd>{afficherLibelleGlpi(libellesPriorite, ticket.priority)}</dd>
             </div>
             <div>
               <dt>Date création</dt>
-              <dd>{formatDate(ticket.date_creation || ticket.date)}</dd>
+              <dd>{formaterDate(ticket.date_creation || ticket.date)}</dd>
             </div>
             <div>
               <dt>Date modification</dt>
-              <dd>{formatDate(ticket.date_mod)}</dd>
+              <dd>{formaterDate(ticket.date_mod)}</dd>
             </div>
           </dl>
         </section>
@@ -95,8 +100,8 @@ export default function DetailTicket() {
             <ul className="liste-elements">
               {elements.map((element) => (
                 <li key={element.id || `${element.itemtype}-${element.items_id}`}>
-                  <strong>{element.itemtype || 'Élément'}</strong>
-                  <span>ID {element.items_id || element.id}</span>
+                  <strong>{afficherValeurGlpi(element.itemtype) || 'Élément'}</strong>
+                  <span>ID {afficherValeurGlpi(element.items_id || element.id)}</span>
                 </li>
               ))}
             </ul>

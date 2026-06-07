@@ -387,6 +387,49 @@ td button {
   color: #b42318;
 }
 
+.grille-modules-reinitialisation {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.grille-modules-reinitialisation label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e7ebf2;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.grille-modules-reinitialisation input,
+td input[type="checkbox"] {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+
+.journal-reinitialisation {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e7ebf2;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #dbeafe;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.journal-reinitialisation p {
+  margin: 0;
+}
+
 .metric-section {
   display: grid;
   gap: 12px;

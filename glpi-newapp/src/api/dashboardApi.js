@@ -1,4 +1,5 @@
 import clientGlpiLegacy from './glpiLegacyClient';
+import clientGlpiV2 from './glpiV2Client';
 
 export const libellesStatut = {
   1: 'Nouveau',
@@ -23,17 +24,37 @@ export const libellesPriorite = {
   6: 'Majeure',
 };
 
-const endpointsElements = [
-  ['ordinateurs', '/Computer?range=0-999&expand_dropdowns=true'],
-  ['moniteurs', '/Monitor?range=0-999&expand_dropdowns=true'],
-  ['imprimantes', '/Printer?range=0-999&expand_dropdowns=true'],
-  ['telephones', '/Phone?range=0-999&expand_dropdowns=true'],
-  ['equipementsReseau', '/NetworkEquipment?range=0-999&expand_dropdowns=true'],
-  ['peripheriques', '/Peripheral?range=0-999&expand_dropdowns=true'],
+const cheminsElements = [
+  ['ordinateurs', '/Computer?range=0-999&expand_dropdowns=true', '/Asset/Computer?limit=1000'],
+  ['moniteurs', '/Monitor?range=0-999&expand_dropdowns=true', '/Asset/Monitor?limit=1000'],
+  ['imprimantes', '/Printer?range=0-999&expand_dropdowns=true', '/Asset/Printer?limit=1000'],
+  ['telephones', '/Phone?range=0-999&expand_dropdowns=true', '/Asset/Phone?limit=1000'],
+  [
+    'equipementsReseau',
+    '/NetworkEquipment?range=0-999&expand_dropdowns=true',
+    '/Asset/NetworkEquipment?limit=1000',
+  ],
+  ['peripheriques', '/Peripheral?range=0-999&expand_dropdowns=true', '/Asset/Peripheral?limit=1000'],
 ];
 
 function normaliserListe(donnees) {
-  return Array.isArray(donnees) ? donnees : [];
+  if (Array.isArray(donnees)) {
+    return donnees;
+  }
+
+  if (Array.isArray(donnees?.data)) {
+    return donnees.data;
+  }
+
+  if (Array.isArray(donnees?.items)) {
+    return donnees.items;
+  }
+
+  if (Array.isArray(donnees?.member)) {
+    return donnees.member;
+  }
+
+  return [];
 }
 
 function compterTicketsParValeur(tickets, champ, valeur) {
@@ -45,13 +66,13 @@ async function recupererListe(endpoint) {
   return normaliserListe(reponse.data);
 }
 
-export async function recupererStatistiquesDashboard() {
-  const [tickets, ...groupesElements] = await Promise.all([
-    recupererListe('/Ticket?range=0-999&expand_dropdowns=true'),
-    ...endpointsElements.map(([, endpoint]) => recupererListe(endpoint)),
-  ]);
+async function recupererListeV2(chemin) {
+  const reponse = await clientGlpiV2.get(chemin);
+  return normaliserListe(reponse.data);
+}
 
-  const statistiquesElements = endpointsElements.reduce((accumulateur, [cle], index) => {
+function calculerStatistiques(tickets, groupesElements) {
+  const statistiquesElements = cheminsElements.reduce((accumulateur, [cle], index) => {
     accumulateur[cle] = groupesElements[index]?.length || 0;
     return accumulateur;
   }, {});
@@ -79,6 +100,32 @@ export async function recupererStatistiquesDashboard() {
     equipementsReseau: statistiquesElements.equipementsReseau,
     peripheriques: statistiquesElements.peripheriques,
   };
+}
+
+async function recupererStatistiquesDashboardLegacy() {
+  const [tickets, ...groupesElements] = await Promise.all([
+    recupererListe('/Ticket?range=0-999&expand_dropdowns=true'),
+    ...cheminsElements.map(([, chemin]) => recupererListe(chemin)),
+  ]);
+
+  return calculerStatistiques(tickets, groupesElements);
+}
+
+async function recupererStatistiquesDashboardV2() {
+  const [tickets, ...groupesElements] = await Promise.all([
+    recupererListeV2('/Assistance/Ticket?limit=1000'),
+    ...cheminsElements.map(([, , cheminV2]) => recupererListeV2(cheminV2)),
+  ]);
+
+  return calculerStatistiques(tickets, groupesElements);
+}
+
+export async function recupererStatistiquesDashboard() {
+  try {
+    return await recupererStatistiquesDashboardV2();
+  } catch {
+    return recupererStatistiquesDashboardLegacy();
+  }
 }
 
 export async function recupererStatsDashboard() {

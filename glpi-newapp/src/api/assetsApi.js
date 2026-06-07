@@ -1,4 +1,6 @@
 import clientGlpiLegacy from './glpiLegacyClient';
+import clientGlpiV2 from './glpiV2Client';
+import { afficherValeurGlpi } from '../utils/affichage';
 
 const libellesTypesElements = {
   Computer: 'Ordinateur',
@@ -10,23 +12,59 @@ const libellesTypesElements = {
 };
 
 const cheminsElements = [
-  ['Computer', '/Computer?range=0-999&expand_dropdowns=true'],
-  ['Monitor', '/Monitor?range=0-999&expand_dropdowns=true'],
-  ['Printer', '/Printer?range=0-999&expand_dropdowns=true'],
-  ['Phone', '/Phone?range=0-999&expand_dropdowns=true'],
-  ['NetworkEquipment', '/NetworkEquipment?range=0-999&expand_dropdowns=true'],
-  ['Peripheral', '/Peripheral?range=0-999&expand_dropdowns=true'],
+  ['Computer', '/Computer?range=0-999&expand_dropdowns=true', '/Asset/Computer?limit=1000'],
+  ['Monitor', '/Monitor?range=0-999&expand_dropdowns=true', '/Asset/Monitor?limit=1000'],
+  ['Printer', '/Printer?range=0-999&expand_dropdowns=true', '/Asset/Printer?limit=1000'],
+  ['Phone', '/Phone?range=0-999&expand_dropdowns=true', '/Asset/Phone?limit=1000'],
+  [
+    'NetworkEquipment',
+    '/NetworkEquipment?range=0-999&expand_dropdowns=true',
+    '/Asset/NetworkEquipment?limit=1000',
+  ],
+  ['Peripheral', '/Peripheral?range=0-999&expand_dropdowns=true', '/Asset/Peripheral?limit=1000'],
 ];
 
-async function recupererElementsParType(itemtype, chemin) {
-  const reponse = await clientGlpiLegacy.get(chemin);
-  const donnees = Array.isArray(reponse.data) ? reponse.data : [];
+function normaliserListeElements(donnees) {
+  if (Array.isArray(donnees)) {
+    return donnees;
+  }
 
-  return donnees.map((element) => ({
+  if (Array.isArray(donnees?.data)) {
+    return donnees.data;
+  }
+
+  if (Array.isArray(donnees?.items)) {
+    return donnees.items;
+  }
+
+  if (Array.isArray(donnees?.member)) {
+    return donnees.member;
+  }
+
+  return [];
+}
+
+function enrichirElements(donnees, itemtype) {
+  return normaliserListeElements(donnees).map((element) => ({
     ...element,
     itemtype,
     typeAffiche: libellesTypesElements[itemtype] || itemtype,
+    statut: afficherValeurGlpi(element.states_id),
+    localisation: afficherValeurGlpi(element.locations_id),
+    fabricant: afficherValeurGlpi(element.manufacturers_id),
   }));
+}
+
+async function recupererElementsParType(itemtype, chemin) {
+  const reponse = await clientGlpiLegacy.get(chemin);
+
+  return enrichirElements(reponse.data, itemtype);
+}
+
+async function recupererElementsParTypeV2(itemtype, cheminV2) {
+  const reponse = await clientGlpiV2.get(cheminV2);
+
+  return enrichirElements(reponse.data, itemtype);
 }
 
 export function recupererOrdinateurs() {
@@ -54,9 +92,17 @@ export function recupererPeripheriques() {
 }
 
 export async function recupererTousLesElements() {
-  const groupesElements = await Promise.all(
-    cheminsElements.map(([itemtype, chemin]) => recupererElementsParType(itemtype, chemin)),
-  );
+  try {
+    const groupesElementsV2 = await Promise.all(
+      cheminsElements.map(([itemtype, , cheminV2]) => recupererElementsParTypeV2(itemtype, cheminV2)),
+    );
 
-  return groupesElements.flat();
+    return groupesElementsV2.flat();
+  } catch {
+    const groupesElementsLegacy = await Promise.all(
+      cheminsElements.map(([itemtype, chemin]) => recupererElementsParType(itemtype, chemin)),
+    );
+
+    return groupesElementsLegacy.flat();
+  }
 }

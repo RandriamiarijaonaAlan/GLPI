@@ -2,28 +2,33 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { recupererTickets } from '../../api/ticketsApi';
 import { libellesPriorite, libellesStatut, libellesType } from '../../api/dashboardApi';
+import { afficherValeurGlpi } from '../../utils/affichage';
 
-function formatDate(value) {
-  return value ? new Date(value).toLocaleString('fr-FR') : '-';
+function formaterDate(valeur) {
+  return valeur ? new Date(valeur).toLocaleString('fr-FR') : '-';
+}
+
+function afficherLibelleGlpi(libelles, valeur) {
+  return libelles[valeur] || afficherValeurGlpi(valeur);
 }
 
 export default function ListeTickets() {
   const navigate = useNavigate();
-  const [tickets, setTickets] = useState([]);
-  const [chargement, setChargement] = useState(true);
-  const [erreur, setErreur] = useState('');
+  const [tickets, definirTickets] = useState([]);
+  const [chargement, definirChargement] = useState(true);
+  const [erreur, definirErreur] = useState('');
 
   async function chargerTickets() {
-    setChargement(true);
-    setErreur('');
+    definirChargement(true);
+    definirErreur('');
 
     try {
       const donnees = await recupererTickets();
-      setTickets(donnees);
+      definirTickets(donnees);
     } catch (erreurChargement) {
-      setErreur(erreurChargement.message);
+      definirErreur(erreurChargement.message);
     } finally {
-      setChargement(false);
+      definirChargement(false);
     }
   }
 
@@ -61,11 +66,11 @@ export default function ListeTickets() {
               {tickets.map((ticket) => (
                 <tr key={ticket.id}>
                   <td>{ticket.id}</td>
-                  <td>{ticket.name || '-'}</td>
-                  <td>{libellesStatut[ticket.status] || ticket.status || '-'}</td>
-                  <td>{libellesType[ticket.type] || ticket.type || '-'}</td>
-                  <td>{libellesPriorite[ticket.priority] || ticket.priority || '-'}</td>
-                  <td>{formatDate(ticket.date_creation || ticket.date)}</td>
+                  <td>{afficherValeurGlpi(ticket.name)}</td>
+                  <td>{afficherLibelleGlpi(libellesStatut, ticket.status)}</td>
+                  <td>{afficherLibelleGlpi(libellesType, ticket.type)}</td>
+                  <td>{afficherLibelleGlpi(libellesPriorite, ticket.priority)}</td>
+                  <td>{formaterDate(ticket.date_creation || ticket.date)}</td>
                   <td>
                     <button
                       type="button"

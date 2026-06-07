@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { recupererTousLesElements } from '../../api/assetsApi';
 import { creerTicket, lierElementAuTicket } from '../../api/ticketsApi';
+import { afficherValeurGlpi } from '../../utils/affichage';
 
 const formulaireInitial = {
   titre: '',
@@ -16,8 +17,9 @@ function recupererCleElement(element) {
 }
 
 function recupererLibelleElement(element) {
-  const typeElement = element.typeAffiche || element.itemtype;
-  return `${typeElement} #${element.id} - ${element.name || 'Sans nom'}`;
+  const typeElement = afficherValeurGlpi(element.typeAffiche || element.itemtype);
+  const nomElement = afficherValeurGlpi(element.name);
+  return `${typeElement} #${element.id} - ${nomElement === '-' ? 'Sans nom' : nomElement}`;
 }
 
 function recupererElementSelectionneTicket() {

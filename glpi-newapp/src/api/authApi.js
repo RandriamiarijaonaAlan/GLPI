@@ -1,7 +1,14 @@
 import axios from 'axios';
+import {
+  recupererTokenV2 as recupererTokenOAuthV2,
+  sauvegarderTokenV2,
+  supprimerTokenV2 as supprimerTokenOAuthV2,
+  testerConnexionGlpiV2,
+} from './glpiV2Client';
+
+export { testerConnexionGlpiV2 };
 
 const CLE_ACCES_BACKOFFICE = 'backoffice_access';
-const CLE_JETON_V2 = 'glpi_v2_access_token';
 const CLE_SESSION_LEGACY = 'glpi_legacy_session_token';
 
 const messagesErreurGlpi = {
@@ -89,15 +96,15 @@ export function aAccesBackoffice() {
 }
 
 export function enregistrerJetonV2(jeton) {
-  sessionStorage.setItem(CLE_JETON_V2, jeton);
+  sauvegarderTokenV2(jeton, Date.now() + 3600 * 1000);
 }
 
 export function recupererJetonV2() {
-  return sessionStorage.getItem(CLE_JETON_V2);
+  return recupererTokenOAuthV2();
 }
 
 export function supprimerJetonV2() {
-  sessionStorage.removeItem(CLE_JETON_V2);
+  supprimerTokenOAuthV2();
 }
 
 export function aJetonV2() {
@@ -152,22 +159,6 @@ export async function garantirSessionLegacy() {
   }
 
   return initialiserSessionLegacy();
-}
-
-export async function testerConnexionGlpiV2() {
-  if (!recupererJetonV2()) {
-    return {
-      succes: false,
-      api: 'v2',
-      message: 'API v2 non configurée : OAuth2 Bearer token manquant',
-    };
-  }
-
-  return {
-    succes: false,
-    api: 'v2',
-    message: 'API v2 nécessite une authentification OAuth2, elle sera configurée plus tard.',
-  };
 }
 
 export async function testerConnexionGlpiLegacy() {
