@@ -1,5 +1,6 @@
-import { RouterProvider, createBrowserRouter } from 'react-router-dom';
+import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import RouteProtegeeBackoffice from './backoffice/routes/RouteProtegeeBackoffice';
+import LayoutBackoffice from './backoffice/composants/LayoutBackoffice';
 import ConnexionBackoffice from './backoffice/pages/ConnexionBackoffice';
 import TableauDeBord from './backoffice/pages/TableauDeBord';
 import TicketsBackoffice from './backoffice/pages/TicketsBackoffice';
@@ -21,27 +22,37 @@ const routeur = createBrowserRouter(
       element: <ConnexionBackoffice />,
     },
     {
+      path: '/admin',
       element: <RouteProtegeeBackoffice />,
       children: [
         {
-          path: '/admin/dashboard',
-          element: <TableauDeBord />,
-        },
-        {
-          path: '/admin/tickets',
-          element: <TicketsBackoffice />,
-        },
-        {
-          path: '/admin/tickets/:id',
-          element: <FicheTicketBackoffice />,
-        },
-        {
-          path: '/admin/import',
-          element: <ImportFichiers />,
-        },
-        {
-          path: '/admin/reset',
-          element: <ReinitialisationDonnees />,
+          element: <LayoutBackoffice />,
+          children: [
+            {
+              index: true,
+              element: <Navigate to="/admin/dashboard" replace />,
+            },
+            {
+              path: 'dashboard',
+              element: <TableauDeBord />,
+            },
+            {
+              path: 'tickets',
+              element: <TicketsBackoffice />,
+            },
+            {
+              path: 'tickets/:id',
+              element: <FicheTicketBackoffice />,
+            },
+            {
+              path: 'import',
+              element: <ImportFichiers />,
+            },
+            {
+              path: 'reset',
+              element: <ReinitialisationDonnees />,
+            },
+          ],
         },
       ],
     },

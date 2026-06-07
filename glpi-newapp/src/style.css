@@ -155,6 +155,93 @@ button:disabled {
   margin-top: 24px;
 }
 
+.layout-backoffice {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.sidebar-backoffice {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100vh;
+  padding: 24px 18px;
+  background: #172033;
+  color: #ffffff;
+}
+
+.marque-backoffice {
+  display: grid;
+  gap: 4px;
+}
+
+.marque-backoffice strong {
+  font-size: 1.15rem;
+}
+
+.marque-backoffice span {
+  color: #b9c4d6;
+  font-weight: 700;
+}
+
+.navigation-backoffice {
+  display: grid;
+  gap: 8px;
+}
+
+.lien-backoffice {
+  display: block;
+  padding: 11px 12px;
+  border-radius: 6px;
+  color: #d8deea;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.lien-backoffice:hover,
+.lien-backoffice.actif {
+  background: #2f6fed;
+  color: #ffffff;
+}
+
+.bouton-deconnexion {
+  width: 100%;
+  margin-top: auto;
+  border-color: #d8deea;
+  background: transparent;
+}
+
+.zone-backoffice {
+  min-width: 0;
+}
+
+.entete-backoffice {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 32px;
+  border-bottom: 1px solid #d8deea;
+  background: #ffffff;
+}
+
+.entete-backoffice h1 {
+  font-size: 1.35rem;
+}
+
+.contenu-backoffice {
+  padding: 32px;
+}
+
+.contenu-backoffice main {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 .backoffice-page {
   display: grid;
   gap: 24px;
@@ -258,6 +345,46 @@ td button {
 .detail-panel dd {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.resume-reinitialisation {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.resume-reinitialisation div {
+  padding: 12px;
+  border: 1px solid #e7ebf2;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.erreurs-reinitialisation {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.avertissements-reinitialisation {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.liste-avertissements,
+.avertissements-reinitialisation ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: #92400e;
+}
+
+.erreurs-reinitialisation ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: #b42318;
 }
 
 .metric-section {
@@ -463,5 +590,19 @@ td button {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .layout-backoffice {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-backoffice {
+    position: static;
+    height: auto;
+  }
+
+  .entete-backoffice,
+  .contenu-backoffice {
+    padding: 20px;
   }
 }

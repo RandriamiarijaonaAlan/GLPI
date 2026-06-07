@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { supprimerAccesBackoffice } from '../../api/authApi';
+import { Link } from 'react-router-dom';
 import { recupererStatistiquesDashboard } from '../../api/dashboardApi';
 
 function CarteStatistique({ libelle, valeur }) {
@@ -13,7 +12,6 @@ function CarteStatistique({ libelle, valeur }) {
 }
 
 export default function TableauDeBord() {
-  const navigate = useNavigate();
   const [statistiques, setStatistiques] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
@@ -62,11 +60,6 @@ export default function TableauDeBord() {
     chargerDashboard();
   }, []);
 
-  function gererDeconnexion() {
-    supprimerAccesBackoffice();
-    navigate('/admin/login');
-  }
-
   return (
     <main className="backoffice-page">
       <div className="page-header">
@@ -77,9 +70,6 @@ export default function TableauDeBord() {
         <div className="button-row">
           <button type="button" onClick={chargerDashboard} disabled={chargement}>
             Actualiser
-          </button>
-          <button type="button" onClick={gererDeconnexion}>
-            Déconnexion
           </button>
         </div>
       </div>
