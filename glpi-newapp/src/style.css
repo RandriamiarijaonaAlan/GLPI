@@ -318,10 +318,97 @@ td button {
   min-height: 180px;
 }
 
+.selection-elements-ticket {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.entete-selection-elements {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.entete-selection-elements span {
+  color: #5e6a7d;
+  font-weight: 700;
+}
+
+.liste-elements-ticket {
+  display: grid;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.ticket-form .ligne-element-ticket {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e7ebf2;
+  font-weight: 600;
+}
+
+.ticket-form .ligne-element-ticket:last-child {
+  border-bottom: 0;
+}
+
+.ticket-form .ligne-element-ticket input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.filtres-elements {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.filtres-elements label {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  font-weight: 700;
+}
+
+.filtres-elements input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #cfd6e4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  font: inherit;
+}
+
+.actions-filtres {
+  display: flex;
+  align-items: end;
+}
+
+.actions-filtres button {
+  width: 100%;
 }
 
 .filtre-elements {

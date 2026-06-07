@@ -16,29 +16,68 @@ function recupererCleElement(element) {
 }
 
 function recupererLibelleElement(element) {
-  return `${element.itemtype} #${element.id} - ${element.name || 'Sans nom'}`;
+  const typeElement = element.typeAffiche || element.itemtype;
+  return `${typeElement} #${element.id} - ${element.name || 'Sans nom'}`;
 }
 
-export default function CreerTicket() {
-  const [formulaire, setFormulaire] = useState(formulaireInitial);
-  const [elements, setElements] = useState([]);
-  const [chargementElements, setChargementElements] = useState(true);
-  const [soumission, setSoumission] = useState(false);
-  const [messageSucces, setMessageSucces] = useState('');
-  const [erreur, setErreur] = useState('');
+function recupererElementSelectionneTicket() {
+  const valeurStockee = sessionStorage.getItem('element_selectionne_ticket');
+
+  if (!valeurStockee) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(valeurStockee);
+  } catch {
+    sessionStorage.removeItem('element_selectionne_ticket');
+    return null;
+  }
+}
+
+function completerElementsAvecSelection(elements, elementSelectionne) {
+  if (!elementSelectionne) {
+    return elements;
+  }
+
+  const cleSelectionnee = recupererCleElement(elementSelectionne);
+  const selectionDejaPresente = elements.some(
+    (element) => recupererCleElement(element) === cleSelectionnee,
+  );
+
+  return selectionDejaPresente ? elements : [elementSelectionne, ...elements];
+}
+
+export default function CreationTicket() {
+  const [formulaire, definirFormulaire] = useState(formulaireInitial);
+  const [elements, definirElements] = useState([]);
+  const [chargementElements, definirChargementElements] = useState(true);
+  const [soumission, definirSoumission] = useState(false);
+  const [messageSucces, definirMessageSucces] = useState('');
+  const [erreur, definirErreur] = useState('');
 
   useEffect(() => {
     async function chargerElements() {
-      setChargementElements(true);
-      setErreur('');
+      definirChargementElements(true);
+      definirErreur('');
 
       try {
+        const elementSelectionne = recupererElementSelectionneTicket();
         const donnees = await recupererTousLesElements();
-        setElements(donnees);
+        const elementsComplets = completerElementsAvecSelection(donnees, elementSelectionne);
+
+        definirElements(elementsComplets);
+
+        if (elementSelectionne) {
+          definirFormulaire((formulaireCourant) => ({
+            ...formulaireCourant,
+            clesElements: [recupererCleElement(elementSelectionne)],
+          }));
+        }
       } catch (erreurChargement) {
-        setErreur(erreurChargement.message);
+        definirErreur(`Impossible de charger les éléments GLPI : ${erreurChargement.message}`);
       } finally {
-        setChargementElements(false);
+        definirChargementElements(false);
       }
     }
 
@@ -46,25 +85,37 @@ export default function CreerTicket() {
   }, []);
 
   function mettreAJourChamp(champ, valeur) {
-    setFormulaire((courant) => ({
-      ...courant,
+    definirFormulaire((formulaireCourant) => ({
+      ...formulaireCourant,
       [champ]: valeur,
     }));
   }
 
-  function gererChangementElements(evenement) {
-    const valeursSelectionnees = Array.from(
-      evenement.target.selectedOptions,
-      (option) => option.value,
-    );
-    mettreAJourChamp('clesElements', valeursSelectionnees);
+  function basculerElement(element, coche) {
+    const cleElement = recupererCleElement(element);
+
+    definirFormulaire((formulaireCourant) => {
+      const clesElements = coche
+        ? [...new Set([...formulaireCourant.clesElements, cleElement])]
+        : formulaireCourant.clesElements.filter((cleCourante) => cleCourante !== cleElement);
+
+      return {
+        ...formulaireCourant,
+        clesElements,
+      };
+    });
+  }
+
+  function reinitialiserFormulaire() {
+    definirFormulaire(formulaireInitial);
+    sessionStorage.removeItem('element_selectionne_ticket');
   }
 
   async function gererSoumission(evenement) {
     evenement.preventDefault();
-    setSoumission(true);
-    setMessageSucces('');
-    setErreur('');
+    definirSoumission(true);
+    definirMessageSucces('');
+    definirErreur('');
 
     try {
       const ticket = await creerTicket({
@@ -77,48 +128,56 @@ export default function CreerTicket() {
       const idTicket = ticket.id;
 
       if (!idTicket) {
-        throw new Error(`Ticket créé mais ID introuvable: ${JSON.stringify(ticket)}`);
+        throw new Error(`Ticket créé mais ID introuvable : ${JSON.stringify(ticket)}`);
       }
 
       const elementsSelectionnes = elements.filter((element) =>
         formulaire.clesElements.includes(recupererCleElement(element)),
       );
+
       await Promise.all(
         elementsSelectionnes.map((element) => lierElementAuTicket(idTicket, element)),
       );
 
-      setMessageSucces(`Ticket #${idTicket} créé avec succès.`);
-      setFormulaire(formulaireInitial);
+      definirMessageSucces(`Ticket #${idTicket} créé avec succès.`);
+      reinitialiserFormulaire();
     } catch (erreurSoumission) {
-      setErreur(erreurSoumission.message);
+      definirErreur(`Impossible de créer le ticket : ${erreurSoumission.message}`);
     } finally {
-      setSoumission(false);
+      definirSoumission(false);
     }
   }
 
   return (
     <main className="backoffice-page">
       <div className="page-header">
-        <h1>Créer un ticket</h1>
+        <div>
+          <h1>Créer un ticket</h1>
+          <p>Associez un ou plusieurs éléments GLPI à votre demande.</p>
+        </div>
       </div>
 
       <form className="ticket-form" onSubmit={gererSoumission}>
-        <label htmlFor="ticket-title">Titre</label>
-        <input
-          id="ticket-title"
-          type="text"
-          value={formulaire.titre}
-          onChange={(evenement) => mettreAJourChamp('titre', evenement.target.value)}
-          required
-        />
+        <label htmlFor="ticket-titre">
+          Titre
+          <input
+            id="ticket-titre"
+            type="text"
+            value={formulaire.titre}
+            onChange={(evenement) => mettreAJourChamp('titre', evenement.target.value)}
+            required
+          />
+        </label>
 
-        <label htmlFor="ticket-description">Description</label>
-        <textarea
-          id="ticket-description"
-          value={formulaire.description}
-          onChange={(evenement) => mettreAJourChamp('description', evenement.target.value)}
-          required
-        />
+        <label htmlFor="ticket-description">
+          Description
+          <textarea
+            id="ticket-description"
+            value={formulaire.description}
+            onChange={(evenement) => mettreAJourChamp('description', evenement.target.value)}
+            required
+          />
+        </label>
 
         <div className="form-grid">
           <label htmlFor="ticket-type">
@@ -133,10 +192,10 @@ export default function CreerTicket() {
             </select>
           </label>
 
-          <label htmlFor="ticket-urgency">
+          <label htmlFor="ticket-urgence">
             Urgence
             <select
-              id="ticket-urgency"
+              id="ticket-urgence"
               value={formulaire.urgence}
               onChange={(evenement) => mettreAJourChamp('urgence', evenement.target.value)}
             >
@@ -148,10 +207,10 @@ export default function CreerTicket() {
             </select>
           </label>
 
-          <label htmlFor="ticket-priority">
+          <label htmlFor="ticket-priorite">
             Priorité
             <select
-              id="ticket-priority"
+              id="ticket-priorite"
               value={formulaire.priorite}
               onChange={(evenement) => mettreAJourChamp('priorite', evenement.target.value)}
             >
@@ -164,26 +223,40 @@ export default function CreerTicket() {
           </label>
         </div>
 
-        <label htmlFor="ticket-elements">Éléments liés</label>
-        <select
-          id="ticket-elements"
-          multiple
-          value={formulaire.clesElements}
-          onChange={gererChangementElements}
-          disabled={chargementElements}
-        >
-          {elements.map((element) => (
-            <option key={recupererCleElement(element)} value={recupererCleElement(element)}>
-              {recupererLibelleElement(element)}
-            </option>
-          ))}
-        </select>
+        <section className="selection-elements-ticket" aria-labelledby="titre-elements-ticket">
+          <div className="entete-selection-elements">
+            <h2 id="titre-elements-ticket">Éléments liés</h2>
+            <span>{formulaire.clesElements.length} sélectionné(s)</span>
+          </div>
 
-        {chargementElements ? <p>Chargement des éléments...</p> : null}
+          {chargementElements ? <p>Chargement des éléments...</p> : null}
+
+          {!chargementElements && elements.length === 0 ? <p>Aucun élément GLPI disponible.</p> : null}
+
+          {!chargementElements && elements.length > 0 ? (
+            <div className="liste-elements-ticket">
+              {elements.map((element) => {
+                const cleElement = recupererCleElement(element);
+
+                return (
+                  <label className="ligne-element-ticket" key={cleElement}>
+                    <input
+                      type="checkbox"
+                      checked={formulaire.clesElements.includes(cleElement)}
+                      onChange={(evenement) => basculerElement(element, evenement.target.checked)}
+                    />
+                    <span>{recupererLibelleElement(element)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
+        </section>
+
         {messageSucces ? <p className="message-succes">{messageSucces}</p> : null}
         {erreur ? <p className="message-erreur">{erreur}</p> : null}
 
-        <button type="submit" disabled={soumission}>
+        <button type="submit" disabled={soumission || chargementElements}>
           {soumission ? 'Création en cours...' : 'Créer le ticket'}
         </button>
       </form>

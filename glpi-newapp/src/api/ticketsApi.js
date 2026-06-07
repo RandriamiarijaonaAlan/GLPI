@@ -18,20 +18,20 @@ export async function recupererTickets() {
   return Array.isArray(reponse.data) ? reponse.data : [];
 }
 
-export async function recupererTicketParId(id) {
-  const reponse = await clientGlpiLegacy.get(`/Ticket/${id}?expand_dropdowns=true`);
+export async function recupererTicketParId(idTicket) {
+  const reponse = await clientGlpiLegacy.get(`/Ticket/${idTicket}?expand_dropdowns=true`);
 
   return reponse.data;
 }
 
-export async function creerTicket(donnees) {
+export async function creerTicket(donneesTicket) {
   const reponse = await clientGlpiLegacy.post('/Ticket', {
     input: {
-      name: donnees.titre,
-      content: donnees.description,
-      type: donnees.type || 1,
-      urgency: donnees.urgence || 3,
-      priority: donnees.priorite || 3,
+      name: donneesTicket.titre,
+      content: donneesTicket.description,
+      type: donneesTicket.type || 1,
+      urgency: donneesTicket.urgence || 3,
+      priority: donneesTicket.priorite || 3,
       status: 1,
       entities_id: 0,
     },
@@ -55,10 +55,12 @@ export async function lierElementAuTicket(idTicket, element) {
   return reponse.data;
 }
 
-export async function recupererElementsTicket(idTicket) {
+export async function recupererElementsDuTicket(idTicket) {
   const reponse = await clientGlpiLegacy.get(
     `/Item_Ticket?searchText[tickets_id]=${encodeURIComponent(idTicket)}&expand_dropdowns=true`,
   );
 
   return Array.isArray(reponse.data) ? reponse.data : [];
 }
+
+export const recupererElementsTicket = recupererElementsDuTicket;
