@@ -1,24 +1,26 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/glpi-api-v1': {
-        target: 'http://localhost',
+      "/glpi-api-v1": {
+        target: "http://glpi.localhost",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/glpi-api-v1/, '/glpi/api.php/v1'),
+        rewrite: (path) => path.replace(/^\/glpi-api-v1/, "/api.php/v1"),
       },
-      '/glpi-api-v2': {
-        target: 'http://localhost',
+
+      "/glpi-api-v2": {
+        target: "http://glpi.localhost",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/glpi-api-v2/, '/glpi/api.php/v2.3'),
+        rewrite: (path) => path.replace(/^\/glpi-api-v2/, "/api.php/v2.3"),
       },
-      '/glpi-token': {
-        target: 'http://localhost',
+
+      "/glpi-token": {
+        target: "http://glpi.localhost",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/glpi-token/, '/glpi/api.php/token'),
+        rewrite: (path) => path.replace(/^\/glpi-token/, "/api.php/token"),
       },
     },
   },
