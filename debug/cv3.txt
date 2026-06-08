@@ -1,0 +1,57 @@
+Corriger uniquement l’import CSV 3 TicketCost.
+
+Problèmes :
+1. Le CSV 3 peut contenir plusieurs lignes pour le même Num_Ticket.
+   Dans ce cas, il faut créer plusieurs coûts pour le même ticket, c’est correct.
+
+2. Mais les nombres avec virgule décimale comme 8,7 sont convertis en 0.
+   Il faut convertir correctement :
+   8,7 → 8.7
+
+3. Fixed_Cost doit aussi être correctement importé.
+   Si Fixed_Cost = 50, GLPI doit afficher 50.00.
+
+À corriger :
+
+Créer ou corriger :
+convertirNombreCsv(valeur, valeurParDefaut = 0)
+
+Règles :
+- null, undefined, vide → valeurParDefaut
+- remplacer virgule décimale par point
+- supprimer espaces
+- convertir en Number
+- si NaN → valeurParDefaut
+
+Exemples :
+"8,7" → 8.7
+"8.7" → 8.7
+" 50 " → 50
+"" → 0
+null → 0
+
+Dans importerCoutsCsv(donnees) :
+
+Mapping obligatoire :
+Duration_second → actiontime
+Time_Cost → cost_time
+Fixed_Cost → cost_fixed
+
+Body :
+{
+  "input": {
+    "tickets_id": idTicketGlpi,
+    "name": "NEWAPP_IMPORT_JUIN_2026 - Ref " + Num_Ticket,
+    "actiontime": convertirNombreCsv(ligne.Duration_second, 0),
+    "cost_time": convertirNombreCsv(ligne.Time_Cost, 0),
+    "cost_fixed": convertirNombreCsv(ligne.Fixed_Cost, 0),
+    "entities_id": 0
+  }
+}
+
+Important :
+- Ne jamais envoyer null.
+- Ne pas fusionner automatiquement les lignes du même Num_Ticket.
+- Si le CSV a 2 lignes pour Num_Ticket = 1, créer 2 TicketCost.
+- Ajouter log :
+  Coût Ref 1 : actiontime=600, cost_time=8.7, cost_fixed=50
