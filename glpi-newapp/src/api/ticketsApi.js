@@ -1,6 +1,8 @@
 import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
 
+const MARQUAGE_NEWAPP = 'NEWAPP_IMPORT_JUIN_2026';
+
 function convertirNombreFormulaire(valeur) {
   if (valeur === null || valeur === undefined) {
     return 0;
@@ -48,10 +50,33 @@ function normaliserListeTickets(donnees) {
   return [];
 }
 
+function ticketEstVisible(ticket) {
+  return ticket?.is_deleted !== 1 && ticket?.is_deleted !== true && String(ticket?.is_deleted || '') !== '1';
+}
+
+function construireContenuTicket(donneesTicket) {
+  const lignes = [];
+  const description = String(donneesTicket.description || '').trim();
+
+  if (description) {
+    lignes.push(description);
+  }
+
+  if (!description.includes(MARQUAGE_NEWAPP)) {
+    if (lignes.length > 0) {
+      lignes.push('');
+    }
+
+    lignes.push(MARQUAGE_NEWAPP);
+  }
+
+  return lignes.join('\n');
+}
+
 function creerCorpsTicket(donneesTicket) {
   return {
     name: donneesTicket.titre,
-    content: donneesTicket.description,
+    content: construireContenuTicket(donneesTicket),
     type: donneesTicket.type || 1,
     urgency: donneesTicket.urgence || 3,
     priority: donneesTicket.priorite || 3,
@@ -63,13 +88,13 @@ function creerCorpsTicket(donneesTicket) {
 async function recupererTicketsLegacy() {
   const reponse = await clientGlpiLegacy.get('/Ticket?range=0-99&expand_dropdowns=true');
 
-  return normaliserListeTickets(reponse.data);
+  return normaliserListeTickets(reponse.data).filter(ticketEstVisible);
 }
 
 async function recupererTicketsV2() {
   const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=1000');
 
-  return normaliserListeTickets(reponse.data);
+  return normaliserListeTickets(reponse.data).filter(ticketEstVisible);
 }
 
 export async function recupererTickets() {
@@ -143,7 +168,7 @@ export async function lierElementAuTicket(idTicket, element) {
 export async function creerCoutTicket(idTicket, donneesCout) {
   const corpsCout = {
     tickets_id: idTicket,
-    name: 'Coût saisi depuis NewAPP',
+    name: `${MARQUAGE_NEWAPP} - Coût saisi depuis NewAPP`,
     actiontime: convertirNombreFormulaire(donneesCout?.dureeSecondes),
     cost_time: convertirNombreFormulaire(donneesCout?.coutTemps),
     cost_fixed: convertirNombreFormulaire(donneesCout?.coutFixe),
