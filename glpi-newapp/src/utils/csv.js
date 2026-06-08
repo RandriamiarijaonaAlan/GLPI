@@ -3,13 +3,36 @@ const COLONNES_ASSET = ['Name', 'Status', 'Location', 'Manufacturer', 'Item_Type
 const COLONNES_TICKET = ['Ref_Ticket', 'Date', 'Heure', 'Type', 'Titre', 'Description', 'Status', 'Priority', 'Items'];
 const COLONNES_COUT = ['Num_Ticket', 'Duration_second', 'Time_Cost', 'Fixed_Cost'];
 
-// Lit un fichier CSV et retourne son contenu texte en UTF-8
+// Retourne true si le texte contient des séquences typiques de double-encodage UTF-8/Latin-1
+// (ex : "Ã©" au lieu de "é", "Ã " au lieu de "à")
+// Un fichier Latin-1 lu en UTF-8 produit Ã ou Â suivi d'un octet de continuation (U+0080–U+00FF).
+function contientDoubleEncodage(texte) {
+  return /[\u00c2\u00c3][\u0080-\u00ff]/.test(texte);
+}
+
+// Lit un fichier CSV en UTF-8. Si le texte obtenu contient des artefacts de double-encodage,
+// relit en Latin-1 (Windows-1252) qui est l'encodage réel du fichier.
 export function lireFichierCsv(fichier) {
   return new Promise((resoudre, rejeter) => {
-    const lecteur = new FileReader();
-    lecteur.onload = (evenement) => resoudre(evenement.target.result);
-    lecteur.onerror = () => rejeter(new Error(`Impossible de lire le fichier : ${fichier.name}`));
-    lecteur.readAsText(fichier, 'UTF-8');
+    const lecteurUtf8 = new FileReader();
+
+    lecteurUtf8.onload = (evenement) => {
+      const texteUtf8 = evenement.target.result;
+
+      if (!contientDoubleEncodage(texteUtf8)) {
+        resoudre(texteUtf8);
+        return;
+      }
+
+      // Fichier en Latin-1/Windows-1252 : relire avec le bon encodage
+      const lecteurLatin1 = new FileReader();
+      lecteurLatin1.onload = (ev) => resoudre(ev.target.result);
+      lecteurLatin1.onerror = () => rejeter(new Error(`Impossible de lire le fichier : ${fichier.name}`));
+      lecteurLatin1.readAsText(fichier, 'windows-1252');
+    };
+
+    lecteurUtf8.onerror = () => rejeter(new Error(`Impossible de lire le fichier : ${fichier.name}`));
+    lecteurUtf8.readAsText(fichier, 'UTF-8');
   });
 }
 

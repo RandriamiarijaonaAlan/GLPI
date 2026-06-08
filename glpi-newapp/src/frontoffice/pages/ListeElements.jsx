@@ -31,14 +31,14 @@ function normaliserValeurAffichage(valeur) {
 
 function elementCorrespondAuxFiltres(element, filtres) {
   const valeursElement = {
-    nom: normaliserValeur(element.name),
-    statut: normaliserValeur(element.status),
-    localisation: normaliserValeur(element.location),
-    fabricant: normaliserValeur(element.manufacturer),
-    typeElement: normaliserValeur(`${element.typeAffiche} ${element.itemType} ${element.itemtype}`),
-    modele: normaliserValeur(element.model),
-    numeroInventaire: normaliserValeur(element.inventoryNumber),
-    utilisateur: normaliserValeur(element.user),
+    nom: normaliserValeur(element.nom ?? element.name),
+    statut: normaliserValeur(element.statut ?? element.status),
+    localisation: normaliserValeur(element.localisation ?? element.location),
+    fabricant: normaliserValeur(element.fabricant ?? element.manufacturer),
+    typeElement: normaliserValeur(`${element.typeElement ?? element.typeAffiche} ${element.itemType} ${element.itemtype}`),
+    modele: normaliserValeur(element.modele ?? element.model),
+    numeroInventaire: normaliserValeur(element.numeroInventaire ?? element.inventoryNumber),
+    utilisateur: normaliserValeur(element.utilisateur ?? element.user),
   };
 
   return Object.entries(filtres).every(([champ, valeur]) => {
@@ -95,7 +95,7 @@ export default function ListeElements() {
   }
 
   return (
-    <main className="backoffice-page">
+    <main className="backoffice-page elements-page">
       <div className="page-header">
         <div>
           <h1>Éléments GLPI</h1>
@@ -210,7 +210,7 @@ export default function ListeElements() {
           {elementsFiltres.length === 0 ? <p>Aucun élément trouvé.</p> : null}
 
           {elementsFiltres.length > 0 ? (
-            <div className="table-wrap">
+            <div className="table-wrap table-elements">
               <table>
                 <thead>
                   <tr>
@@ -230,14 +230,14 @@ export default function ListeElements() {
                   {elementsFiltres.map((element) => (
                     <tr key={`${element.itemtype}-${element.id}`}>
                       <td>{element.id}</td>
-                      <td>{normaliserValeurAffichage(element.name)}</td>
-                      <td>{normaliserValeurAffichage(element.status)}</td>
-                      <td>{normaliserValeurAffichage(element.location)}</td>
-                      <td>{normaliserValeurAffichage(element.manufacturer)}</td>
-                      <td>{normaliserValeurAffichage(element.typeAffiche || element.itemType || element.itemtype)}</td>
-                      <td>{normaliserValeurAffichage(element.model)}</td>
-                      <td>{normaliserValeurAffichage(element.inventoryNumber)}</td>
-                      <td>{normaliserValeurAffichage(element.user)}</td>
+                      <td>{normaliserValeurAffichage(element.nom ?? element.name)}</td>
+                      <td>{normaliserValeurAffichage(element.statut ?? element.status)}</td>
+                      <td>{normaliserValeurAffichage(element.localisation ?? element.location)}</td>
+                      <td>{normaliserValeurAffichage(element.fabricant ?? element.manufacturer)}</td>
+                      <td>{normaliserValeurAffichage(element.typeElement ?? element.typeAffiche ?? element.itemType ?? element.itemtype)}</td>
+                      <td>{normaliserValeurAffichage(element.modele ?? element.model)}</td>
+                      <td>{normaliserValeurAffichage(element.numeroInventaire ?? element.inventoryNumber)}</td>
+                      <td>{normaliserValeurAffichage(element.utilisateur ?? element.user)}</td>
                       <td>
                         <button type="button" onClick={() => creerTicketPourElement(element)}>
                           Créer un ticket

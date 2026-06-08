@@ -70,7 +70,9 @@ export const typesElementsSupportes = {
   Enclosure: { endpointV1: '/Enclosure', endpointV2: '/Assets/Enclosure', libelle: 'Boîtier' },
   PDU: { endpointV1: '/PDU', endpointV2: '/Assets/PDU', libelle: 'Unité de distribution' },
   Cable: { endpointV1: '/Cable', endpointV2: '/Assets/Cable', libelle: 'Câble' },
-  Socket: { endpointV1: '/Socket', endpointV2: '/Assets/Socket', libelle: 'Prise' },
+  // Socket est namespacé dans GLPI 10+ : l'API v1 attend Glpi\Socket (encodé %5C),
+  // mais l'API v2 utilise le nom court /Assets/Socket.
+  Socket: { endpointV1: '/Glpi%5CSocket', endpointV2: '/Assets/Socket', libelle: 'Prise', itemtypeApi: 'Glpi\\Socket' },
   Cartridge: { endpointV1: '/Cartridge', endpointV2: '/Assets/Cartridge', libelle: 'Cartouche' },
   Consumable: { endpointV1: '/Consumable', endpointV2: '/Assets/Consumable', libelle: 'Consommable' },
   Unmanaged: { endpointV1: '/Unmanaged', endpointV2: '/Assets/Unmanaged', libelle: 'Non géré' },
@@ -91,6 +93,12 @@ const CHAMPS_MODELES_PAR_TYPE = Object.fromEntries(
 );
 
 const TYPES_ELEMENTS_VALIDES = Object.keys(typesElementsSupportes);
+
+// Retourne l'itemtype réel attendu par l'API GLPI (ex: Glpi\Socket pour les types namespacés)
+// Pour la plupart des types, l'itemtype API est identique à la clé de configuration.
+function itemtypeApiPourType(type) {
+  return typesElementsSupportes[type]?.itemtypeApi || type;
+}
 
 const aliasItemType = {
   ordinateur: 'Computer',
@@ -205,6 +213,11 @@ function formaterErreurApiComplete(erreur) {
   const donnees = erreur.response?.data;
   const message = donnees ? JSON.stringify(donnees) : erreur.message || 'Erreur inconnue';
   return statut ? `HTTP ${statut} - ${message}` : message;
+}
+
+// Retourne true si l'erreur indique que le type n'est pas exposé par l'API REST GLPI
+function estErreurTypeNonSupporte(erreur) {
+  return String(erreur?.message || '').includes('ERROR_RESOURCE_NOT_FOUND_NOR_COMMONDBTM');
 }
 
 function extraireNomReference(reference) {
@@ -431,13 +444,14 @@ export async function recupererOuCreerUtilisateurGlpi(nomUtilisateur, ajouterLog
 function construireCommentaireImportElement(ligne) {
   const lignesCommentaire = [
     MARQUAGE_IMPORT,
+    `Name: ${normaliserTexteCsv(ligne?.Name) || '-'}`,
     `Status: ${normaliserTexteCsv(ligne?.Status) || '-'}`,
     `Location: ${normaliserTexteCsv(ligne?.Location) || '-'}`,
     `Manufacturer: ${normaliserTexteCsv(ligne?.Manufacturer) || '-'}`,
+    `Item_Type: ${normaliserTexteCsv(ligne?.Item_Type) || '-'}`,
     `Model: ${normaliserTexteCsv(ligne?.Model) || '-'}`,
     `Inventory_Number: ${normaliserTexteCsv(ligne?.Inventory_Number) || '-'}`,
     `User: ${normaliserTexteCsv(ligne?.User) || '-'}`,
-    `Item_Type: ${normaliserTexteCsv(ligne?.Item_Type) || '-'}`,
   ];
 
   return lignesCommentaire.join('\n');
@@ -702,8 +716,8 @@ function convertirStatutTicket(valeur) {
     new: 1, nouveau: 1,
     assigned: 2, encoursattribue: 2, encoursattribué: 2,
     planned: 3, encoursplanifie: 3, encoursplanifié: 3,
-    pending: 4, enattente: 4,
-    resolved: 5, resolu: 5, résolu: 5,
+    waiting: 4, pending: 4, enattente: 4,
+    solved: 5, resolved: 5, resolu: 5, résolu: 5,
     closed: 6, clos: 6,
   };
   return correspondances[texte] || 1; // Nouveau par défaut
@@ -886,7 +900,8 @@ async function rechercherElementParNomOuInventaire(nomElement, ajouterLog = () =
 
     if (trouve) {
       ajouterLog(`Recherche ${nomElement} dans ${type} : trouvé #${trouve.id}`);
-      return { ...trouve, itemtype: type };
+      // itemtype renvoyé = itemtype réel de l'API GLPI (ex: Glpi\Socket) pour la relation Item_Ticket
+      return { ...trouve, itemtype: itemtypeApiPourType(type) };
     }
 
     ajouterLog(`Recherche ${nomElement} dans ${type} : non trouvé`);
@@ -902,8 +917,9 @@ function extraireIdCree(donnees) {
   return donnees?.items_id || null;
 }
 
+// L'API v2 attend le corps directement, sans le wrapper { input: ... } utilisé par v1
 async function creerElementV2(configuration, corpsElement) {
-  const reponse = await clientGlpiV2.post(configuration.endpointV2, { input: corpsElement });
+  const reponse = await clientGlpiV2.post(configuration.endpointV2, corpsElement);
   return reponse.data;
 }
 
@@ -912,6 +928,9 @@ async function creerElementV1(configuration, corpsElement) {
   return reponse.data;
 }
 
+// Ordre : v1 d'abord (format { input: ... }), puis v2 si v1 échoue (corps direct sans input),
+// puis v1 avec champs minimaux en dernier recours.
+// Certains types (ex: Socket) ne sont accessibles qu'en v2 — le fallback v2 les couvre.
 async function creerElementAvecFallback(itemtype, corpsElement, ajouterLog) {
   const configuration = typesElementsSupportes[itemtype];
   const corpsMinimal = {
@@ -921,6 +940,13 @@ async function creerElementAvecFallback(itemtype, corpsElement, ajouterLog) {
   };
 
   try {
+    ajouterLog(`Création asset ${itemtype} via API v1`);
+    return await creerElementV1(configuration, corpsElement);
+  } catch (erreurV1) {
+    ajouterLog(`API v1 ${itemtype} refusée : ${formaterErreurApiComplete(erreurV1)}`);
+  }
+
+  try {
     ajouterLog(`Création asset ${itemtype} via API v2`);
     return await creerElementV2(configuration, corpsElement);
   } catch (erreurV2) {
@@ -928,14 +954,7 @@ async function creerElementAvecFallback(itemtype, corpsElement, ajouterLog) {
   }
 
   try {
-    ajouterLog(`Création asset ${itemtype} via API v1`);
-    return await creerElementV1(configuration, corpsElement);
-  } catch (erreurV1) {
-    ajouterLog(`API v1 ${itemtype} refusée avec champs complets : ${formaterErreurApiComplete(erreurV1)}`);
-  }
-
-  try {
-    ajouterLog(`Nouvelle tentative ${itemtype} avec champs minimaux`);
+    ajouterLog(`Nouvelle tentative ${itemtype} avec champs minimaux via API v1`);
     return await creerElementV1(configuration, corpsMinimal);
   } catch (erreurMinimale) {
     throw new Error(formaterErreurApiComplete(erreurMinimale));
@@ -1066,17 +1085,24 @@ export async function importerElementsCsv(donnees, ajouterLog) {
       const donneesCreation = await creerElementAvecFallback(itemType, corpsElement, ajouterLog);
       const idCree = extraireIdCree(donneesCreation);
 
-      ajouterLog(`Asset créé : ${nom}${idCree ? ` #${idCree}` : ''}`);
+      ajouterLog(`Asset créé : ${nom}`);
       resultat.importes++;
       resultat.elementsImportes++;
 
       // Mémoriser localement pour détecter les doublons des lignes suivantes
       elementsParType[itemType].push({ id: idCree, name: nom, otherserial: numeroInventaire, itemtype: itemType });
     } catch (erreurApi) {
-      const message = `Erreur import ${nom} (${itemType}) : ${erreurApi.message}`;
-      ajouterLog(message);
-      resultat.avertissements.push(message);
-      resultat.erreurs++;
+      if (estErreurTypeNonSupporte(erreurApi)) {
+        const avert = `Type non supporté dans cette version de GLPI : ${itemType} — ${nom} ignoré`;
+        ajouterLog(avert);
+        resultat.avertissements.push(avert);
+        resultat.typesNonSupportes++;
+      } else {
+        const message = `Erreur import ${nom} (${itemType}) : ${erreurApi.message}`;
+        ajouterLog(message);
+        resultat.avertissements.push(message);
+        resultat.erreurs++;
+      }
       resultat.elementsIgnores++;
     }
   }
@@ -1152,17 +1178,17 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       const corpsTicket = {
         name: titre,
         content: contenu,
-        type: 1,
-        urgency: 3,
-        priority: 3,
-        status: 1,
+        type: convertirTypeTicket(ligne.Type),
+        urgency: convertirPrioriteTicket(ligne.Priority),
+        priority: convertirPrioriteTicket(ligne.Priority),
+        status: convertirStatutTicket(ligne.Status),
         entities_id: 0,
       };
 
       const reponseCreation = await creerTicketAvecFallbackDate(corpsTicket, dateGLPI, ajouterLog);
       const idTicket = extraireIdCree(reponseCreation.data);
 
-      ajouterLog(`Ticket Ref ${refTicket || titre} créé avec ID #${idTicket}`);
+      ajouterLog(`Ticket créé : ${refTicket || titre} → ID GLPI #${idTicket}`);
       resultat.importes++;
 
       if (estValide(refTicket) && idTicket) {
@@ -1179,11 +1205,11 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 
       // Créer les relations Item_Ticket si la colonne Items est renseignée
       if (estValide(itemsColonne) && idTicket) {
-        ajouterLog(`Ticket ${titre} : Items brut = ${itemsColonne}`);
+        ajouterLog(`Ticket ${refTicket || titre} : Items brut = ${itemsColonne}`);
 
         const nomsElements = extraireNomsElementsDepuisItems(itemsColonne);
         resultat.elementsDemandes += nomsElements.length;
-        ajouterLog(`Ticket ${titre} : Items extraits = ${nomsElements.join(', ') || '-'}`);
+        ajouterLog(`Items extraits pour ${refTicket || titre} : ${nomsElements.join(', ') || '-'}`);
         ajouterLog(`Ticket ${titre} : nombre éléments extraits = ${nomsElements.length}`);
 
         const doublonsNomsElements = recupererDoublonsNomsElements(nomsElements);
@@ -1229,7 +1255,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
               },
             });
             ajouterLog(`POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : OK`);
-            ajouterLog(`Relation créée : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
+            ajouterLog(`Relation créée : ${refTicket || idTicket} → ${nomElement}`);
             resultat.associationsCreees++;
             resultat.associations++;
             relationsExistantes.push({ itemtype: element.itemtype, items_id: element.id });
@@ -1298,7 +1324,7 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
       const valeurCoutTemps = convertirNombreCsv(ligne.Time_Cost, 0);
       const valeurCoutFixe = convertirNombreCsv(ligne.Fixed_Cost, 0);
 
-      ajouterLog(`Coût Ref ${numTicket} : actiontime=${valeurActiontime}, cost_time=${valeurCoutTemps}, cost_fixed=${valeurCoutFixe}`);
+      ajouterLog(`Coût ${numTicket} : actiontime=${valeurActiontime}, cost_time=${valeurCoutTemps}, cost_fixed=${valeurCoutFixe}`);
 
       const corpsCout = {
         tickets_id: ticket.id,
@@ -1310,7 +1336,7 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
       };
 
       await clientGlpiLegacy.post('/TicketCost', { input: corpsCout });
-      ajouterLog(`Coût Ref ${numTicket} : TicketCost créé`);
+      ajouterLog(`TicketCost créé pour ${numTicket}`);
       resultat.importes++;
     } catch (erreurApi) {
       const message = `Erreur import coût Ref ${numTicket} : ${erreurApi.message}`;

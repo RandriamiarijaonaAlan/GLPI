@@ -247,6 +247,10 @@ button:disabled {
   gap: 24px;
 }
 
+.elements-page {
+  width: min(1280px, calc(100% - 32px));
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -317,6 +321,38 @@ th {
 td button {
   min-height: 34px;
   padding: 0 12px;
+}
+
+.table-elements table {
+  min-width: 1080px;
+}
+
+.table-elements th,
+.table-elements td {
+  white-space: nowrap;
+}
+
+.table-elements th:nth-child(6),
+.table-elements td:nth-child(6) {
+  min-width: 140px;
+  white-space: normal;
+}
+
+.table-elements th:nth-child(8),
+.table-elements td:nth-child(8) {
+  min-width: 130px;
+  white-space: normal;
+}
+
+.table-elements th:last-child,
+.table-elements td:last-child {
+  width: 1%;
+  text-align: center;
+}
+
+.table-elements td:last-child button {
+  width: 96px;
+  line-height: 1.1;
 }
 
 .detail-panel {
