@@ -9,6 +9,19 @@ const libellesTypesElements = {
   Phone: 'Téléphone',
   NetworkEquipment: 'Équipement réseau',
   Peripheral: 'Périphérique',
+  Software: 'Logiciel',
+  SoftwareLicense: 'Licence logiciel',
+  Certificate: 'Certificat',
+  Appliance: 'Applicatif',
+  Rack: 'Baie',
+  Enclosure: 'Boîtier',
+  PDU: 'Unité de distribution',
+  Cable: 'Câble',
+  Socket: 'Prise',
+  Cartridge: 'Cartouche',
+  Consumable: 'Consommable',
+  Unmanaged: 'Non géré',
+  PassiveDCEquipment: 'Équipement passif DC',
 };
 
 const champsModeleParType = {
@@ -21,16 +34,33 @@ const champsModeleParType = {
 };
 
 const cheminsElements = [
-  ['Computer', '/Computer?range=0-999&expand_dropdowns=true', '/Asset/Computer?limit=1000'],
-  ['Monitor', '/Monitor?range=0-999&expand_dropdowns=true', '/Asset/Monitor?limit=1000'],
-  ['Printer', '/Printer?range=0-999&expand_dropdowns=true', '/Asset/Printer?limit=1000'],
-  ['Phone', '/Phone?range=0-999&expand_dropdowns=true', '/Asset/Phone?limit=1000'],
+  ['Computer', '/Computer?range=0-999&expand_dropdowns=true', '/Assets/Computer?limit=1000'],
+  ['Monitor', '/Monitor?range=0-999&expand_dropdowns=true', '/Assets/Monitor?limit=1000'],
+  ['Printer', '/Printer?range=0-999&expand_dropdowns=true', '/Assets/Printer?limit=1000'],
+  ['Phone', '/Phone?range=0-999&expand_dropdowns=true', '/Assets/Phone?limit=1000'],
   [
     'NetworkEquipment',
     '/NetworkEquipment?range=0-999&expand_dropdowns=true',
-    '/Asset/NetworkEquipment?limit=1000',
+    '/Assets/NetworkEquipment?limit=1000',
   ],
-  ['Peripheral', '/Peripheral?range=0-999&expand_dropdowns=true', '/Asset/Peripheral?limit=1000'],
+  ['Peripheral', '/Peripheral?range=0-999&expand_dropdowns=true', '/Assets/Peripheral?limit=1000'],
+  ['Software', '/Software?range=0-999&expand_dropdowns=true', '/Assets/Software?limit=1000'],
+  ['SoftwareLicense', '/SoftwareLicense?range=0-999&expand_dropdowns=true', '/Assets/SoftwareLicense?limit=1000'],
+  ['Certificate', '/Certificate?range=0-999&expand_dropdowns=true', '/Assets/Certificate?limit=1000'],
+  ['Appliance', '/Appliance?range=0-999&expand_dropdowns=true', '/Assets/Appliance?limit=1000'],
+  ['Rack', '/Rack?range=0-999&expand_dropdowns=true', '/Assets/Rack?limit=1000'],
+  ['Enclosure', '/Enclosure?range=0-999&expand_dropdowns=true', '/Assets/Enclosure?limit=1000'],
+  ['PDU', '/PDU?range=0-999&expand_dropdowns=true', '/Assets/PDU?limit=1000'],
+  ['Cable', '/Cable?range=0-999&expand_dropdowns=true', '/Assets/Cable?limit=1000'],
+  ['Socket', '/Socket?range=0-999&expand_dropdowns=true', '/Assets/Socket?limit=1000'],
+  ['Cartridge', '/Cartridge?range=0-999&expand_dropdowns=true', '/Assets/Cartridge?limit=1000'],
+  ['Consumable', '/Consumable?range=0-999&expand_dropdowns=true', '/Assets/Consumable?limit=1000'],
+  ['Unmanaged', '/Unmanaged?range=0-999&expand_dropdowns=true', '/Assets/Unmanaged?limit=1000'],
+  [
+    'PassiveDCEquipment',
+    '/PassiveDCEquipment?range=0-999&expand_dropdowns=true',
+    '/Assets/PassiveDCEquipment?limit=1000',
+  ],
 ];
 
 function normaliserValeurAffichage(valeur) {
@@ -120,17 +150,19 @@ export function recupererPeripheriques() {
 }
 
 export async function recupererTousLesElements() {
-  try {
-    const groupesElementsV2 = await Promise.all(
-      cheminsElements.map(([itemtype, , cheminV2]) => recupererElementsParTypeV2(itemtype, cheminV2)),
-    );
+  const groupesElements = await Promise.all(
+    cheminsElements.map(async ([itemtype, chemin, cheminV2]) => {
+      try {
+        return await recupererElementsParTypeV2(itemtype, cheminV2);
+      } catch {
+        try {
+          return await recupererElementsParType(itemtype, chemin);
+        } catch {
+          return [];
+        }
+      }
+    }),
+  );
 
-    return groupesElementsV2.flat();
-  } catch {
-    const groupesElementsLegacy = await Promise.all(
-      cheminsElements.map(([itemtype, chemin]) => recupererElementsParType(itemtype, chemin)),
-    );
-
-    return groupesElementsLegacy.flat();
-  }
+  return groupesElements.flat();
 }

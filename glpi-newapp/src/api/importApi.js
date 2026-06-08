@@ -1,4 +1,5 @@
 import clientGlpiLegacy from './glpiLegacyClient';
+import clientGlpiV2 from './glpiV2Client';
 
 const MARQUAGE_IMPORT = 'NEWAPP_IMPORT_JUIN_2026';
 
@@ -11,23 +12,142 @@ const cacheUtilisateursImport = new Map();
 // Cache des éléments par type pour la recherche en cours d'import tickets ; réinitialisé à chaque appel
 let cacheElementsTicketImport = null;
 
-const CHAMPS_MODELES_PAR_TYPE = {
-  Computer: { chemin: '/ComputerModel', champ: 'computermodels_id' },
-  Monitor: { chemin: '/MonitorModel', champ: 'monitormodels_id' },
-  Printer: { chemin: '/PrinterModel', champ: 'printermodels_id' },
-  Phone: { chemin: '/PhoneModel', champ: 'phonemodels_id' },
-  NetworkEquipment: { chemin: '/NetworkEquipmentModel', champ: 'networkequipmentmodels_id' },
-  Peripheral: { chemin: '/PeripheralModel', champ: 'peripheralmodels_id' },
+// Compteur des référentiels créés pendant l'import assets courant
+let nombreReferentielsCreesImport = 0;
+
+export const typesElementsSupportes = {
+  Computer: {
+    endpointV1: '/Computer',
+    endpointV2: '/Assets/Computer',
+    libelle: 'Ordinateur',
+    champModele: 'computermodels_id',
+    modeleEndpointV1: '/ComputerModel',
+  },
+  Monitor: {
+    endpointV1: '/Monitor',
+    endpointV2: '/Assets/Monitor',
+    libelle: 'Moniteur',
+    champModele: 'monitormodels_id',
+    modeleEndpointV1: '/MonitorModel',
+  },
+  Printer: {
+    endpointV1: '/Printer',
+    endpointV2: '/Assets/Printer',
+    libelle: 'Imprimante',
+    champModele: 'printermodels_id',
+    modeleEndpointV1: '/PrinterModel',
+  },
+  Phone: {
+    endpointV1: '/Phone',
+    endpointV2: '/Assets/Phone',
+    libelle: 'Téléphone',
+    champModele: 'phonemodels_id',
+    modeleEndpointV1: '/PhoneModel',
+  },
+  NetworkEquipment: {
+    endpointV1: '/NetworkEquipment',
+    endpointV2: '/Assets/NetworkEquipment',
+    libelle: 'Équipement réseau',
+    champModele: 'networkequipmentmodels_id',
+    modeleEndpointV1: '/NetworkEquipmentModel',
+  },
+  Peripheral: {
+    endpointV1: '/Peripheral',
+    endpointV2: '/Assets/Peripheral',
+    libelle: 'Périphérique',
+    champModele: 'peripheralmodels_id',
+    modeleEndpointV1: '/PeripheralModel',
+  },
+  Software: { endpointV1: '/Software', endpointV2: '/Assets/Software', libelle: 'Logiciel' },
+  SoftwareLicense: {
+    endpointV1: '/SoftwareLicense',
+    endpointV2: '/Assets/SoftwareLicense',
+    libelle: 'Licence logiciel',
+  },
+  Certificate: { endpointV1: '/Certificate', endpointV2: '/Assets/Certificate', libelle: 'Certificat' },
+  Appliance: { endpointV1: '/Appliance', endpointV2: '/Assets/Appliance', libelle: 'Applicatif' },
+  Rack: { endpointV1: '/Rack', endpointV2: '/Assets/Rack', libelle: 'Baie' },
+  Enclosure: { endpointV1: '/Enclosure', endpointV2: '/Assets/Enclosure', libelle: 'Boîtier' },
+  PDU: { endpointV1: '/PDU', endpointV2: '/Assets/PDU', libelle: 'Unité de distribution' },
+  Cable: { endpointV1: '/Cable', endpointV2: '/Assets/Cable', libelle: 'Câble' },
+  Socket: { endpointV1: '/Socket', endpointV2: '/Assets/Socket', libelle: 'Prise' },
+  Cartridge: { endpointV1: '/Cartridge', endpointV2: '/Assets/Cartridge', libelle: 'Cartouche' },
+  Consumable: { endpointV1: '/Consumable', endpointV2: '/Assets/Consumable', libelle: 'Consommable' },
+  Unmanaged: { endpointV1: '/Unmanaged', endpointV2: '/Assets/Unmanaged', libelle: 'Non géré' },
+  PassiveDCEquipment: {
+    endpointV1: '/PassiveDCEquipment',
+    endpointV2: '/Assets/PassiveDCEquipment',
+    libelle: 'Équipement passif DC',
+  },
 };
 
-const TYPES_ELEMENTS_VALIDES = [
-  'Computer',
-  'Monitor',
-  'Printer',
-  'Phone',
-  'NetworkEquipment',
-  'Peripheral',
-];
+const CHAMPS_MODELES_PAR_TYPE = Object.fromEntries(
+  Object.entries(typesElementsSupportes)
+    .filter(([, configuration]) => configuration.champModele && configuration.modeleEndpointV1)
+    .map(([itemtype, configuration]) => [
+      itemtype,
+      { chemin: configuration.modeleEndpointV1, champ: configuration.champModele },
+    ]),
+);
+
+const TYPES_ELEMENTS_VALIDES = Object.keys(typesElementsSupportes);
+
+const aliasItemType = {
+  ordinateur: 'Computer',
+  computer: 'Computer',
+  computers: 'Computer',
+  pc: 'Computer',
+  moniteur: 'Monitor',
+  monitor: 'Monitor',
+  monitors: 'Monitor',
+  ecran: 'Monitor',
+  écran: 'Monitor',
+  imprimante: 'Printer',
+  printer: 'Printer',
+  printers: 'Printer',
+  telephone: 'Phone',
+  téléphone: 'Phone',
+  phone: 'Phone',
+  phones: 'Phone',
+  networkequipment: 'NetworkEquipment',
+  network_equipment: 'NetworkEquipment',
+  equipementreseau: 'NetworkEquipment',
+  équipementréseau: 'NetworkEquipment',
+  reseau: 'NetworkEquipment',
+  réseau: 'NetworkEquipment',
+  peripherique: 'Peripheral',
+  périphérique: 'Peripheral',
+  peripheral: 'Peripheral',
+  software: 'Software',
+  logiciel: 'Software',
+  softwarelicense: 'SoftwareLicense',
+  licence: 'SoftwareLicense',
+  licencelogiciel: 'SoftwareLicense',
+  certificate: 'Certificate',
+  certificat: 'Certificate',
+  appliance: 'Appliance',
+  applicatif: 'Appliance',
+  rack: 'Rack',
+  baie: 'Rack',
+  enclosure: 'Enclosure',
+  boitier: 'Enclosure',
+  boîtier: 'Enclosure',
+  pdu: 'PDU',
+  cable: 'Cable',
+  câble: 'Cable',
+  socket: 'Socket',
+  prise: 'Socket',
+  cartridge: 'Cartridge',
+  cartouche: 'Cartridge',
+  consumable: 'Consumable',
+  consommable: 'Consumable',
+  unmanaged: 'Unmanaged',
+  nongere: 'Unmanaged',
+  nongéré: 'Unmanaged',
+  passivedcequipment: 'PassiveDCEquipment',
+  equipementpassifdc: 'PassiveDCEquipment',
+  équipementpassifdc: 'PassiveDCEquipment',
+};
 
 // Retourne true si la valeur est non nulle et non vide
 function estValide(valeur) {
@@ -47,8 +167,37 @@ function normaliserNomRecherche(valeur) {
   return String(valeur ?? '').trim().toLowerCase();
 }
 
+export function normaliserTexteCsv(valeur) {
+  return String(valeur ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+}
+
+function normaliserCleTexte(valeur) {
+  return normaliserTexteCsv(valeur)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s_-]+/g, '')
+    .toLowerCase();
+}
+
+export function normaliserItemType(valeur) {
+  const texte = normaliserTexteCsv(valeur);
+
+  if (!texte) {
+    return '';
+  }
+
+  const typeExact = TYPES_ELEMENTS_VALIDES.find((itemtype) => itemtype.toLowerCase() === texte.toLowerCase());
+  if (typeExact) {
+    return typeExact;
+  }
+
+  return aliasItemType[normaliserCleTexte(texte)] || '';
+}
+
 function normaliserComparaisonElement(valeur) {
-  return String(valeur ?? '').trim().replace(/\s+/g, '').toLowerCase();
+  return normaliserTexteCsv(valeur).replace(/\s+/g, '').toLowerCase();
 }
 
 function formaterErreurApiComplete(erreur) {
@@ -104,17 +253,19 @@ function trouverReferenceParNom(references, nomRecherche) {
   );
 }
 
-async function recupererOuCreerReferenceGenerique(chemin, nomReference, champsComplementaires = {}) {
-  const nomNormalise = String(nomReference ?? '').trim();
+async function recupererOuCreerReferenceGenerique(chemin, nomReference, champsComplementaires = {}, ajouterLog = null, libelle = 'Référence') {
+  const nomNormalise = normaliserTexteCsv(nomReference);
 
   if (!nomNormalise) {
     return null;
   }
 
+  if (ajouterLog) ajouterLog(`Recherche ${libelle.toLowerCase()} : ${nomNormalise}`);
   const referencesExistantes = await chargerReferentielGlpi(chemin);
   const referenceExistante = trouverReferenceParNom(referencesExistantes, nomNormalise);
 
   if (referenceExistante?.id) {
+    if (ajouterLog) ajouterLog(`${libelle} existant réutilisé : ${nomNormalise} #${referenceExistante.id}`);
     return referenceExistante.id;
   }
 
@@ -132,37 +283,43 @@ async function recupererOuCreerReferenceGenerique(chemin, nomReference, champsCo
 
     if (idCree) {
       referencesExistantes.push({ id: idCree, name: nomNormalise, ...champsComplementaires });
+      if (ajouterLog) ajouterLog(`${libelle} créé : ${nomNormalise} #${idCree}`);
+      nombreReferentielsCreesImport += 1;
       return idCree;
     }
-  } catch {
+  } catch (erreur) {
+    if (ajouterLog) ajouterLog(`${libelle} non créé : ${nomNormalise} (${formaterErreurApiComplete(erreur)})`);
     return null;
   }
 
   return null;
 }
 
-export async function recupererOuCreerEtatGlpi(nomEtat) {
-  return recupererOuCreerReferenceGenerique('/State', nomEtat);
+export async function recupererOuCreerEtatGlpi(nomEtat, ajouterLog = null) {
+  return recupererOuCreerReferenceGenerique('/State', nomEtat, {}, ajouterLog, 'État');
 }
 
-export async function recupererOuCreerLocalisationGlpi(nomLocalisation) {
-  return recupererOuCreerReferenceGenerique('/Location', nomLocalisation);
+export async function recupererOuCreerLocalisationGlpi(nomLocalisation, ajouterLog = null) {
+  return recupererOuCreerReferenceGenerique('/Location', nomLocalisation, {}, ajouterLog, 'Localisation');
 }
 
-export async function recupererOuCreerFabricantGlpi(nomFabricant) {
-  return recupererOuCreerReferenceGenerique('/Manufacturer', nomFabricant);
+export async function recupererOuCreerFabricantGlpi(nomFabricant, ajouterLog = null) {
+  return recupererOuCreerReferenceGenerique('/Manufacturer', nomFabricant, {}, ajouterLog, 'Fabricant');
 }
 
-export async function recupererOuCreerModeleGlpi(itemtype, nomModele, idFabricant = null) {
+export async function recupererOuCreerModeleGlpi(itemtype, nomModele, idFabricant = null, ajouterLog = null) {
   const configurationModele = CHAMPS_MODELES_PAR_TYPE[itemtype];
 
-  if (!configurationModele || !String(nomModele || '').trim()) {
+  if (!configurationModele || !normaliserTexteCsv(nomModele)) {
+    if (!configurationModele && normaliserTexteCsv(nomModele) && ajouterLog) {
+      ajouterLog(`Model non applicable pour ${itemtype}, valeur conservée dans comment`);
+    }
     return null;
   }
 
   return recupererOuCreerReferenceGenerique(configurationModele.chemin, nomModele, {
     ...(idFabricant ? { manufacturers_id: idFabricant } : {}),
-  });
+  }, ajouterLog, 'Modèle');
 }
 
 export async function rechercherUtilisateurGlpi(nomUtilisateur) {
@@ -203,10 +360,10 @@ async function rechercherUtilisateurParChamp(champ, valeur) {
 // Recherche un utilisateur GLPI puis le crée s'il n'existe pas
 // Retourne { id, cree } ou null sans bloquer l'import en cas d'échec
 export async function recupererOuCreerUtilisateurGlpi(nomUtilisateur, ajouterLog) {
-  const nomBrut = String(nomUtilisateur ?? '').trim();
+  const nomBrut = normaliserTexteCsv(nomUtilisateur);
   if (!nomBrut) return null;
 
-  const cleCache = nomBrut.toLowerCase();
+  const cleCache = normaliserNomRecherche(nomBrut);
 
   // Réutiliser depuis le cache local sans appel réseau
   if (cacheUtilisateursImport.has(cleCache)) {
@@ -262,7 +419,8 @@ export async function recupererOuCreerUtilisateurGlpi(nomUtilisateur, ajouterLog
       cacheUtilisateursImport.set(cleCache, resultatCree);
       return resultatCree;
     }
-  } catch {
+  } catch (erreur) {
+    ajouterLog(`Création utilisateur échouée : ${formaterErreurApiComplete(erreur)}`);
     // Création échouée : import continue sans utilisateur
   }
 
@@ -273,12 +431,13 @@ export async function recupererOuCreerUtilisateurGlpi(nomUtilisateur, ajouterLog
 function construireCommentaireImportElement(ligne) {
   const lignesCommentaire = [
     MARQUAGE_IMPORT,
-    `Status: ${String(ligne?.Status || '').trim() || '-'}`,
-    `Location: ${String(ligne?.Location || '').trim() || '-'}`,
-    `Manufacturer: ${String(ligne?.Manufacturer || '').trim() || '-'}`,
-    `Model: ${String(ligne?.Model || '').trim() || '-'}`,
-    `Inventory_Number: ${String(ligne?.Inventory_Number || '').trim() || '-'}`,
-    `User: ${String(ligne?.User || '').trim() || '-'}`,
+    `Status: ${normaliserTexteCsv(ligne?.Status) || '-'}`,
+    `Location: ${normaliserTexteCsv(ligne?.Location) || '-'}`,
+    `Manufacturer: ${normaliserTexteCsv(ligne?.Manufacturer) || '-'}`,
+    `Model: ${normaliserTexteCsv(ligne?.Model) || '-'}`,
+    `Inventory_Number: ${normaliserTexteCsv(ligne?.Inventory_Number) || '-'}`,
+    `User: ${normaliserTexteCsv(ligne?.User) || '-'}`,
+    `Item_Type: ${normaliserTexteCsv(ligne?.Item_Type) || '-'}`,
   ];
 
   return lignesCommentaire.join('\n');
@@ -290,8 +449,20 @@ function determinerChampModelePourType(itemtype) {
 
 // Charge tous les éléments d'un type donné depuis GLPI (API v1)
 async function chargerElementsParType(itemtype) {
+  const configuration = typesElementsSupportes[itemtype];
+  if (!configuration) return [];
+
   try {
-    const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-9999&expand_dropdowns=true`);
+    const reponseV2 = await clientGlpiV2.get(`${configuration.endpointV2}?limit=9999`);
+    const resultats = normaliserEnTableau(reponseV2.data);
+    if (resultats.length > 0) return resultats;
+    // v2 a répondu mais sans données : on essaie v1 pour ne pas manquer des éléments existants
+  } catch {
+    // API v2 indisponible : fallback API v1.
+  }
+
+  try {
+    const reponse = await clientGlpiLegacy.get(`${configuration.endpointV1}?range=0-9999&expand_dropdowns=true`);
     return normaliserEnTableau(reponse.data);
   } catch {
     return [];
@@ -299,8 +470,11 @@ async function chargerElementsParType(itemtype) {
 }
 
 async function chargerElementsParTypePourAssociation(itemtype) {
+  const configuration = typesElementsSupportes[itemtype];
+  if (!configuration) return [];
+
   try {
-    const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-999&expand_dropdowns=true`);
+    const reponse = await clientGlpiLegacy.get(`${configuration.endpointV1}?range=0-999&expand_dropdowns=true`);
     return normaliserEnTableau(reponse.data);
   } catch {
     return [];
@@ -317,11 +491,28 @@ async function chargerTousLesTickets() {
   }
 }
 
-// Recherche un doublon d'élément par nom ou numéro d'inventaire
+// Extrait la valeur textuelle d'un champ GLPI qui peut être une chaîne ou un objet expand_dropdowns
+function extraireTexteChamp(valeur) {
+  if (valeur === null || valeur === undefined) return '';
+  if (typeof valeur === 'object') return String(valeur?.name || valeur?.value || valeur?.id || '');
+  return String(valeur);
+}
+
+// Recherche un doublon d'élément par nom, numéro d'inventaire ou commentaire d'import
 function trouverDoublonElement(elementsExistants, nom, numeroInventaire) {
+  const nomNormalise = normaliserComparaisonElement(nom);
+  const inventaireNormalise = normaliserComparaisonElement(numeroInventaire);
+
   return elementsExistants.find((el) => {
-    if (estValide(nom) && (el.name || '') === nom) return true;
-    if (estValide(numeroInventaire) && (el.otherserial || '') === numeroInventaire) return true;
+    if (nomNormalise && normaliserComparaisonElement(extraireTexteChamp(el.name)) === nomNormalise) return true;
+    if (inventaireNormalise && normaliserComparaisonElement(extraireTexteChamp(el.otherserial)) === inventaireNormalise) return true;
+    if (inventaireNormalise && normaliserComparaisonElement(extraireTexteChamp(el.serial)) === inventaireNormalise) return true;
+    if (inventaireNormalise && normaliserComparaisonElement(extraireTexteChamp(el.inventory_number)) === inventaireNormalise) return true;
+    // Contrôle de secours : l'import stocke le numéro d'inventaire dans le commentaire
+    if (inventaireNormalise) {
+      const commentaire = String(el.comment || el.comments || '');
+      if (commentaire.includes(`Inventory_Number: ${numeroInventaire}`)) return true;
+    }
     return false;
   });
 }
@@ -481,6 +672,41 @@ export function nettoyerNomElementDepuisCsv(valeur) {
     .split(separateur)
     .map((nom) => nom.trim().replace(/^["'[]+|["'\]]+$/g, '').trim())
     .filter(Boolean);
+}
+
+// Convertit la colonne Type du CSV en valeur GLPI (1=Incident, 2=Demande)
+function convertirTypeTicket(valeur) {
+  const texte = normaliserCleTexte(valeur);
+  if (texte === 'request' || texte === 'demande') return 2;
+  return 1; // Incident par défaut
+}
+
+// Convertit la colonne Priority du CSV en valeur GLPI (1=Très basse … 6=Majeure)
+function convertirPrioriteTicket(valeur) {
+  const texte = normaliserCleTexte(valeur);
+  const correspondances = {
+    verylow: 1, tresbasse: 1, trèsbasse: 1,
+    low: 2, basse: 2,
+    medium: 3, moyenne: 3,
+    high: 4, haute: 4,
+    veryhigh: 5, treshaute: 5, trèshaute: 5,
+    major: 6, majeure: 6,
+  };
+  return correspondances[texte] || 3; // Moyenne par défaut
+}
+
+// Convertit la colonne Status du CSV en valeur GLPI (1=Nouveau … 6=Clos)
+function convertirStatutTicket(valeur) {
+  const texte = normaliserCleTexte(valeur);
+  const correspondances = {
+    new: 1, nouveau: 1,
+    assigned: 2, encoursattribue: 2, encoursattribué: 2,
+    planned: 3, encoursplanifie: 3, encoursplanifié: 3,
+    pending: 4, enattente: 4,
+    resolved: 5, resolu: 5, résolu: 5,
+    closed: 6, clos: 6,
+  };
+  return correspondances[texte] || 1; // Nouveau par défaut
 }
 
 // Convertit une valeur CSV en nombre
@@ -676,13 +902,60 @@ function extraireIdCree(donnees) {
   return donnees?.items_id || null;
 }
 
+async function creerElementV2(configuration, corpsElement) {
+  const reponse = await clientGlpiV2.post(configuration.endpointV2, { input: corpsElement });
+  return reponse.data;
+}
+
+async function creerElementV1(configuration, corpsElement) {
+  const reponse = await clientGlpiLegacy.post(configuration.endpointV1, { input: corpsElement });
+  return reponse.data;
+}
+
+async function creerElementAvecFallback(itemtype, corpsElement, ajouterLog) {
+  const configuration = typesElementsSupportes[itemtype];
+  const corpsMinimal = {
+    name: corpsElement.name,
+    entities_id: 0,
+    comment: corpsElement.comment,
+  };
+
+  try {
+    ajouterLog(`Création asset ${itemtype} via API v2`);
+    return await creerElementV2(configuration, corpsElement);
+  } catch (erreurV2) {
+    ajouterLog(`API v2 ${itemtype} refusée : ${formaterErreurApiComplete(erreurV2)}`);
+  }
+
+  try {
+    ajouterLog(`Création asset ${itemtype} via API v1`);
+    return await creerElementV1(configuration, corpsElement);
+  } catch (erreurV1) {
+    ajouterLog(`API v1 ${itemtype} refusée avec champs complets : ${formaterErreurApiComplete(erreurV1)}`);
+  }
+
+  try {
+    ajouterLog(`Nouvelle tentative ${itemtype} avec champs minimaux`);
+    return await creerElementV1(configuration, corpsMinimal);
+  } catch (erreurMinimale) {
+    throw new Error(formaterErreurApiComplete(erreurMinimale));
+  }
+}
+
 // ─── IMPORT ÉLÉMENTS (ASSET) ───────────────────────────────────────────────
 
 // Importe les éléments du parc depuis les données CSV analysées
 // Évite les doublons, continue en cas d'erreur API sur une ligne
 export async function importerElementsCsv(donnees, ajouterLog) {
+  nombreReferentielsCreesImport = 0;
+
   const resultat = {
     importes: 0,
+    elementsImportes: 0,
+    elementsExistants: 0,
+    elementsIgnores: 0,
+    typesNonSupportes: 0,
+    referentielsCrees: 0,
     doublons: 0,
     erreurs: 0,
     avertissements: [],
@@ -698,42 +971,50 @@ export async function importerElementsCsv(donnees, ajouterLog) {
   }
 
   for (const ligne of donnees) {
-    const nom = (ligne.Name || '').trim();
-    const itemType = (ligne.Item_Type || '').trim();
-    const numeroInventaire = (ligne.Inventory_Number || '').trim();
+    ajouterLog('Import élément démarré');
+    const nom = normaliserTexteCsv(ligne.Name);
+    const itemTypeBrut = normaliserTexteCsv(ligne.Item_Type);
+    const itemType = normaliserItemType(itemTypeBrut);
+    const numeroInventaire = normaliserTexteCsv(ligne.Inventory_Number);
 
     if (!estValide(nom)) {
-      ajouterLog('Ligne ignorée : colonne Name manquante ou vide');
+      ajouterLog('Ligne ignorée : Name vide');
+      resultat.elementsIgnores++;
       continue;
     }
 
-    if (!TYPES_ELEMENTS_VALIDES.includes(itemType)) {
-      const avert = `Ligne ignorée : type inconnu "${itemType}" pour "${nom}"`;
+    if (!itemType || !typesElementsSupportes[itemType]) {
+      const avert = `Ligne ignorée : Item_Type inconnu ${itemTypeBrut || '-'}`;
       ajouterLog(avert);
       resultat.avertissements.push(avert);
+      resultat.typesNonSupportes++;
+      resultat.elementsIgnores++;
       continue;
     }
 
+    ajouterLog(`Type supporté détecté : ${itemType}`);
+    ajouterLog(`Recherche doublon : ${nom}`);
     const existants = elementsParType[itemType] || [];
     const doublon = trouverDoublonElement(existants, nom, numeroInventaire);
 
     if (doublon) {
-      const avert = `Doublon ignoré : ${nom} (${itemType}) — id existant ${doublon.id}`;
+      const avert = `Doublon ignoré : ${nom}`;
       ajouterLog(avert);
       resultat.avertissements.push(avert);
       resultat.doublons++;
+      resultat.elementsExistants++;
       continue;
     }
 
     try {
       const commentaireImport = construireCommentaireImportElement(ligne);
-      const etatGlpi = await recupererOuCreerEtatGlpi(ligne.Status);
-      const localisationGlpi = await recupererOuCreerLocalisationGlpi(ligne.Location);
-      const fabricantGlpi = await recupererOuCreerFabricantGlpi(ligne.Manufacturer);
-      const modeleGlpi = await recupererOuCreerModeleGlpi(itemType, ligne.Model, fabricantGlpi);
+      const etatGlpi = await recupererOuCreerEtatGlpi(ligne.Status, ajouterLog);
+      const localisationGlpi = await recupererOuCreerLocalisationGlpi(ligne.Location, ajouterLog);
+      const fabricantGlpi = await recupererOuCreerFabricantGlpi(ligne.Manufacturer, ajouterLog);
+      const modeleGlpi = await recupererOuCreerModeleGlpi(itemType, ligne.Model, fabricantGlpi, ajouterLog);
 
       let utilisateurGlpi = null;
-      const nomUtilisateur = String(ligne.User || '').trim();
+      const nomUtilisateur = normaliserTexteCsv(ligne.User);
       if (!estValide(nomUtilisateur)) {
         ajouterLog('User vide : asset créé sans utilisateur');
       } else {
@@ -753,6 +1034,7 @@ export async function importerElementsCsv(donnees, ajouterLog) {
 
       const corpsElement = {
         name: nom,
+        entities_id: 0,
         comment: commentaireImport,
       };
 
@@ -781,22 +1063,25 @@ export async function importerElementsCsv(donnees, ajouterLog) {
         corpsElement.users_id = utilisateurGlpi;
       }
 
-      const reponse = await clientGlpiLegacy.post(`/${itemType}`, { input: corpsElement });
-      const idCree = extraireIdCree(reponse.data);
+      const donneesCreation = await creerElementAvecFallback(itemType, corpsElement, ajouterLog);
+      const idCree = extraireIdCree(donneesCreation);
 
-      ajouterLog(`Import élément : ${nom} (${itemType})${idCree ? ` — id ${idCree}` : ''}`);
+      ajouterLog(`Asset créé : ${nom}${idCree ? ` #${idCree}` : ''}`);
       resultat.importes++;
+      resultat.elementsImportes++;
 
       // Mémoriser localement pour détecter les doublons des lignes suivantes
-      elementsParType[itemType].push({ id: idCree, name: nom, otherserial: numeroInventaire });
+      elementsParType[itemType].push({ id: idCree, name: nom, otherserial: numeroInventaire, itemtype: itemType });
     } catch (erreurApi) {
       const message = `Erreur import ${nom} (${itemType}) : ${erreurApi.message}`;
       ajouterLog(message);
       resultat.avertissements.push(message);
       resultat.erreurs++;
+      resultat.elementsIgnores++;
     }
   }
 
+  resultat.referentielsCrees = nombreReferentielsCreesImport;
   return resultat;
 }
 

@@ -220,6 +220,10 @@ export default function ImporterFichiers() {
       lignesAnalysees: 0,
       lignesImportees: 0,
       elementsImportes: 0,
+      elementsExistants: 0,
+      elementsIgnores: 0,
+      typesNonSupportes: 0,
+      referentielsCrees: 0,
       ticketsImportes: 0,
       coutsImportes: 0,
       coutsIgnores: 0,
@@ -292,6 +296,10 @@ export default function ImporterFichiers() {
           utilisateursCrees: 0,
           utilisateursExistants: 0,
           utilisateursNonCrees: 0,
+          elementsExistants: 0,
+          elementsIgnores: 0,
+          typesNonSupportes: 0,
+          referentielsCrees: 0,
         };
 
         ajouterLog(`Import démarré : "${fichier.name}" (${type}, ${donnees.length} lignes)`);
@@ -303,14 +311,22 @@ export default function ImporterFichiers() {
 
           if (cle === 'elements') {
             resumeFichier.elementsImportes = res.importes;
+            resumeFichier.elementsExistants = res.elementsExistants || 0;
+            resumeFichier.elementsIgnores = res.elementsIgnores || 0;
+            resumeFichier.typesNonSupportes = res.typesNonSupportes || 0;
+            resumeFichier.referentielsCrees = res.referentielsCrees || 0;
             resumeFichier.doublons = res.doublons;
             resumeFichier.utilisateursCrees = res.utilisateursCrees || 0;
             resumeFichier.utilisateursExistants = res.utilisateursExistants || 0;
             resumeFichier.utilisateursNonCrees = res.utilisateursNonCrees || 0;
             resumeGlobal.elementsImportes += res.importes;
+            resumeGlobal.elementsExistants += res.elementsExistants || 0;
+            resumeGlobal.elementsIgnores += res.elementsIgnores || 0;
+            resumeGlobal.typesNonSupportes += res.typesNonSupportes || 0;
+            resumeGlobal.referentielsCrees += res.referentielsCrees || 0;
             resumeGlobal.doublons += res.doublons;
             resumeGlobal.lignesImportees += res.importes;
-            resumeGlobal.lignesIgnorees += res.doublons + res.erreurs;
+            resumeGlobal.lignesIgnorees += (res.elementsExistants || 0) + (res.elementsIgnores || 0);
           } else if (cle === 'tickets') {
             resumeFichier.ticketsImportes = res.importes;
             resumeFichier.associationsCreees = res.associations;
@@ -819,6 +835,18 @@ export default function ImporterFichiers() {
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - doublons ignorés : {resume.doublons}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - éléments existants : {resume.elementsExistants || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - éléments ignorés : {resume.elementsIgnores || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - types non supportés : {resume.typesNonSupportes || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - référentiels créés : {resume.referentielsCrees || 0}
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - coûts ignorés : {resume.coutsIgnores || 0}

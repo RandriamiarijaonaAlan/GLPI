@@ -171,6 +171,18 @@ export default function ReinitialisationDonnees() {
               <dd>{resume.elementsNonSupprimes}</dd>
             </div>
             <div>
+              <dt>Référentiels assets trouvés</dt>
+              <dd>{resume.referentielsTrouves}</dd>
+            </div>
+            <div>
+              <dt>Référentiels assets supprimés</dt>
+              <dd>{resume.referentielsSupprimes}</dd>
+            </div>
+            <div>
+              <dt>Référentiels assets non supprimés</dt>
+              <dd>{resume.referentielsNonSupprimes}</dd>
+            </div>
+            <div>
               <dt>Documents trouvés</dt>
               <dd>{resume.documentsTrouves}</dd>
             </div>
@@ -217,6 +229,7 @@ export default function ReinitialisationDonnees() {
 
           {resume.ticketsNonSupprimes === 0 &&
           resume.elementsNonSupprimes === 0 &&
+          resume.referentielsNonSupprimes === 0 &&
           resume.utilisateursNonSupprimes === 0 &&
           resume.erreurs.length === 0 ? (
             <p className="message-succes">Réinitialisation terminée sans erreur.</p>
@@ -224,11 +237,15 @@ export default function ReinitialisationDonnees() {
 
           {resume.ticketsNonSupprimes > 0 ||
           resume.elementsNonSupprimes > 0 ||
+          resume.referentielsNonSupprimes > 0 ||
           resume.utilisateursNonSupprimes > 0 ? (
             <p className="message-erreur">
               Réinitialisation terminée avec éléments non supprimés
               {resume.ticketsNonSupprimes > 0 ? ` (${resume.ticketsNonSupprimes} ticket(s))` : ''}
               {resume.elementsNonSupprimes > 0 ? ` (${resume.elementsNonSupprimes} élément(s))` : ''}
+              {resume.referentielsNonSupprimes > 0
+                ? ` (${resume.referentielsNonSupprimes} référentiel(s) asset)`
+                : ''}
               {resume.utilisateursNonSupprimes > 0
                 ? ` (${resume.utilisateursNonSupprimes} utilisateur(s))`
                 : ''}.

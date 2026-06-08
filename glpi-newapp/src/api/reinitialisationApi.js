@@ -12,6 +12,36 @@ const typesElementsMetier = [
   ['Phone', 'Téléphones'],
   ['NetworkEquipment', 'Équipements réseau'],
   ['Peripheral', 'Périphériques'],
+  ['Software', 'Logiciels'],
+  ['SoftwareLicense', 'Licences logiciel'],
+  ['Certificate', 'Certificats'],
+  ['Appliance', 'Applicatifs'],
+  ['Rack', 'Baies'],
+  ['Enclosure', 'Boîtiers'],
+  ['PDU', 'Unités de distribution'],
+  ['Cable', 'Câbles'],
+  ['Socket', 'Prises'],
+  ['Cartridge', 'Cartouches'],
+  ['Consumable', 'Consommables'],
+  ['Unmanaged', 'Non gérés'],
+  ['PassiveDCEquipment', 'Équipements passifs DC'],
+];
+
+const configurationsReferentielsAssets = [
+  { cle: 'states_id', chemin: '/State', libelle: 'État' },
+  { cle: 'locations_id', chemin: '/Location', libelle: 'Localisation' },
+  { cle: 'manufacturers_id', chemin: '/Manufacturer', libelle: 'Fabricant' },
+  { cle: 'computermodels_id', chemin: '/ComputerModel', libelle: 'Modèle ordinateur', itemtype: 'Computer' },
+  { cle: 'monitormodels_id', chemin: '/MonitorModel', libelle: 'Modèle moniteur', itemtype: 'Monitor' },
+  { cle: 'printermodels_id', chemin: '/PrinterModel', libelle: 'Modèle imprimante', itemtype: 'Printer' },
+  { cle: 'phonemodels_id', chemin: '/PhoneModel', libelle: 'Modèle téléphone', itemtype: 'Phone' },
+  {
+    cle: 'networkequipmentmodels_id',
+    chemin: '/NetworkEquipmentModel',
+    libelle: 'Modèle équipement réseau',
+    itemtype: 'NetworkEquipment',
+  },
+  { cle: 'peripheralmodels_id', chemin: '/PeripheralModel', libelle: 'Modèle périphérique', itemtype: 'Peripheral' },
 ];
 
 function convertirEnTableau(donnees) {
@@ -46,8 +76,39 @@ function recupererMessageErreur(erreur) {
   return erreur?.message || 'Erreur inconnue';
 }
 
+function extraireIdGlpi(valeur) {
+  if (valeur === null || valeur === undefined || valeur === '') {
+    return null;
+  }
+
+  if (typeof valeur === 'object') {
+    return valeur.id || valeur.value || null;
+  }
+
+  return valeur;
+}
+
+function normaliserIdGlpi(valeur) {
+  const id = extraireIdGlpi(valeur);
+  return id === null || id === undefined || id === '' ? null : String(id);
+}
+
 function valeurContientMarqueurImport(valeur) {
   return String(valeur || '').includes(MARQUAGE_IMPORT_IMAGES);
+}
+
+function nomElementEstVide(element) {
+  const nom = String(element?.name || '').trim();
+  return !nom || nom === '0';
+}
+
+function elementEstMarqueImporte(element) {
+  return (
+    valeurContientMarqueurImport(element?.comment) ||
+    valeurContientMarqueurImport(element?.comments) ||
+    valeurContientMarqueurImport(element?.name) ||
+    nomElementEstVide(element)
+  );
 }
 
 function utilisateurEstMarqueImporte(utilisateur) {
@@ -107,20 +168,7 @@ function documentEstMarquePourSuppression(document) {
 }
 
 function documentEstImageImporte(document) {
-  const nom = recupererNomDocument(document).toLowerCase();
-  const nomFichier = String(document?.filename || document?._filename || '').trim().toLowerCase();
-
-  return (
-    documentEstMarquePourSuppression(document) ||
-    nom.endsWith('.png') ||
-    nom.endsWith('.jpg') ||
-    nom.endsWith('.jpeg') ||
-    nom.endsWith('.webp') ||
-    nomFichier.endsWith('.png') ||
-    nomFichier.endsWith('.jpg') ||
-    nomFichier.endsWith('.jpeg') ||
-    nomFichier.endsWith('.webp')
-  );
+  return documentEstMarquePourSuppression(document);
 }
 
 function cleLienAsset(lien) {
@@ -485,19 +533,60 @@ export async function supprimerElementRobuste(element, ajouterLog) {
 
 export async function recupererTicketsV2() {
   const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=500');
-
   return convertirEnTableau(reponse.data).map(normaliserTicket);
 }
 
-async function recupererElementsParTypeV2(itemtype) {
-  const reponse = await clientGlpiV2.get(`/Assets/${itemtype}?limit=500`);
+function ticketEstMarqueImporte(ticket) {
+  return (
+    valeurContientMarqueurImport(ticket?.content) ||
+    valeurContientMarqueurImport(ticket?.comment) ||
+    valeurContientMarqueurImport(ticket?.comments)
+  );
+}
 
-  return convertirEnTableau(reponse.data).map((element) => normaliserElement(element, itemtype));
+async function recupererTicketsImportes() {
+  const tickets = await recupererTicketsV2();
+  return tickets.filter(ticketEstMarqueImporte);
+}
+
+async function recupererElementsParTypeV2(itemtype) {
+  let donneesBrutes = [];
+
+  try {
+    const reponse = await clientGlpiV2.get(`/Assets/${itemtype}?limit=9999`);
+    donneesBrutes = convertirEnTableau(reponse.data);
+  } catch {
+    // API v2 indisponible
+  }
+
+  // Fallback v1 : toujours tenté pour obtenir le champ comment (absent en v2)
+  // On fusionne les deux sources par id pour ne rien manquer
+  try {
+    const reponseV1 = await clientGlpiLegacy.get(`/${itemtype}?range=0-9999&expand_dropdowns=true`);
+    const donneesV1 = convertirEnTableau(reponseV1.data);
+    if (donneesV1.length > 0) {
+      const idsV2 = new Set(donneesBrutes.map((el) => String(el.id)));
+      const supplementsV1 = donneesV1.filter((el) => !idsV2.has(String(el.id)));
+      // Enrichir les éléments v2 avec le comment v1 (non retourné par v2)
+      const commentParId = Object.fromEntries(donneesV1.map((el) => [String(el.id), el.comment || el.comments || '']));
+      donneesBrutes = donneesBrutes.map((el) => ({
+        ...el,
+        comment: el.comment || commentParId[String(el.id)] || '',
+      }));
+      donneesBrutes = [...donneesBrutes, ...supplementsV1];
+    }
+  } catch {
+    // v1 indisponible, on continue avec v2 seul
+  }
+
+  return donneesBrutes
+    .map((element) => normaliserElement(element, itemtype))
+    .filter(elementEstMarqueImporte);
 }
 
 export async function recupererElementsV2() {
   const groupesElements = await Promise.all(
-    typesElementsMetier.map(([itemtype]) => recupererElementsParTypeV2(itemtype)),
+    typesElementsMetier.map(([itemtype]) => recupererElementsParTypeV2(itemtype).catch(() => [])),
   );
 
   return groupesElements.flat();
@@ -512,6 +601,15 @@ export async function recupererRelationsItemTicketV1() {
   }
 }
 
+async function recupererRelationsImportees(idsTicketsImportes, idsAssetsImportes) {
+  const toutes = await recupererRelationsItemTicketV1();
+  return toutes.filter((relation) => {
+    const idTicket = String(relation.tickets_id || '');
+    const cleAsset = `${relation.itemtype}#${String(relation.items_id || '')}`;
+    return idsTicketsImportes.has(idTicket) || idsAssetsImportes.has(cleAsset);
+  });
+}
+
 export async function recupererCoutsTicketV1() {
   try {
     const reponse = await clientGlpiLegacy.get('/TicketCost?range=0-999&expand_dropdowns=true');
@@ -519,6 +617,11 @@ export async function recupererCoutsTicketV1() {
   } catch {
     return [];
   }
+}
+
+async function recupererCoutsImportes() {
+  const tous = await recupererCoutsTicketV1();
+  return tous.filter((cout) => valeurContientMarqueurImport(cout?.name));
 }
 
 export async function recupererUtilisateursImportes() {
@@ -537,10 +640,10 @@ export async function recupererUtilisateursImportes() {
 
 export async function recupererModulesDisponibles() {
   const [tickets, relations, couts, ...groupesElements] = await Promise.all([
-    recupererTicketsV2(),
+    recupererTicketsImportes(),
     recupererRelationsItemTicketV1(),
-    recupererCoutsTicketV1(),
-    ...typesElementsMetier.map(([itemtype]) => recupererElementsParTypeV2(itemtype)),
+    recupererCoutsImportes(),
+    ...typesElementsMetier.map(([itemtype]) => recupererElementsParTypeV2(itemtype).catch(() => [])),
   ]);
 
   const modulesElements = typesElementsMetier.map(([, libelle], index) => ({
@@ -584,7 +687,9 @@ async function recupererElementsRestantsPourUtilisateur() {
       const groupesElements = await Promise.all(
         typesElementsMetier.map(async ([itemtype]) => {
           const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-999&expand_dropdowns=true`);
-          return convertirEnTableau(reponse.data).map((element) => normaliserElement(element, itemtype));
+          return convertirEnTableau(reponse.data)
+            .map((element) => normaliserElement(element, itemtype))
+            .filter(elementEstMarqueImporte);
         }),
       );
       return groupesElements.flat();
@@ -658,6 +763,116 @@ export async function supprimerCoutTicketV1(id) {
   return reponse.data;
 }
 
+function collecterReferentielsDepuisElements(elements) {
+  const referentiels = new Map();
+
+  for (const configuration of configurationsReferentielsAssets) {
+    referentiels.set(configuration.chemin, {
+      ...configuration,
+      ids: new Set(),
+    });
+  }
+
+  for (const element of elements) {
+    for (const configuration of configurationsReferentielsAssets) {
+      if (configuration.itemtype && configuration.itemtype !== element.itemtype) {
+        continue;
+      }
+
+      const idReference = normaliserIdGlpi(element[configuration.cle]);
+      if (!idReference || idReference === '0') {
+        continue;
+      }
+
+      referentiels.get(configuration.chemin).ids.add(idReference);
+    }
+  }
+
+  return referentiels;
+}
+
+function referentielEstEncoreUtilise(configuration, idReference, elementsRestants) {
+  return elementsRestants.some((element) => {
+    if (configuration.itemtype && configuration.itemtype !== element.itemtype) {
+      return false;
+    }
+
+    return normaliserIdGlpi(element[configuration.cle]) === String(idReference);
+  });
+}
+
+async function supprimerReferentielAsset(configuration, idReference) {
+  try {
+    await clientGlpiLegacy.delete(`${configuration.chemin}/${idReference}?force_purge=true`);
+    return true;
+  } catch {
+    try {
+      await clientGlpiLegacy.delete(`${configuration.chemin}/${idReference}`);
+    } catch {
+      // La suppression simple peut échouer si GLPI attend un purge définitif.
+    }
+
+    try {
+      await clientGlpiLegacy.delete(`${configuration.chemin}/${idReference}?force_purge=true`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function supprimerReferentielsAssetsOrphelins(elementsAvantSuppression, ajouterLog, resume, erreurs) {
+  ajouterLog('Recherche des référentiels liés aux assets supprimés');
+  const referentiels = collecterReferentielsDepuisElements(elementsAvantSuppression);
+  const totalTrouves = [...referentiels.values()].reduce((total, configuration) => total + configuration.ids.size, 0);
+  resume.referentielsTrouves = totalTrouves;
+
+  if (totalTrouves === 0) {
+    ajouterLog('Aucun référentiel asset à vérifier');
+    return;
+  }
+
+  let elementsRestants = [];
+  try {
+    const groupes = await Promise.all(
+      typesElementsMetier.map(async ([itemtype]) => {
+        const reponse = await clientGlpiLegacy.get(`/${itemtype}?range=0-9999&expand_dropdowns=true`);
+        return convertirEnTableau(reponse.data).map((el) => ({ ...el, itemtype }));
+      }),
+    );
+    elementsRestants = groupes.flat();
+  } catch (erreur) {
+    const message = `Référentiels assets : vérification des assets restants impossible (${recupererMessageErreur(erreur)})`;
+    erreurs.push(message);
+    ajouterLog(`Erreur ${message}`);
+    resume.referentielsNonSupprimes += totalTrouves;
+    return;
+  }
+
+  for (const configuration of referentiels.values()) {
+    for (const idReference of configuration.ids) {
+      if (referentielEstEncoreUtilise(configuration, idReference, elementsRestants)) {
+        resume.referentielsNonSupprimes += 1;
+        ajouterLog(`${configuration.libelle} #${idReference} non supprimé car encore utilisé`);
+        continue;
+      }
+
+      ajouterLog(`Suppression référentiel ${configuration.libelle} #${idReference}`);
+      const supprime = await supprimerReferentielAsset(configuration, idReference);
+
+      if (supprime) {
+        resume.referentielsSupprimes += 1;
+        ajouterLog(`Référentiel ${configuration.libelle} #${idReference} supprimé`);
+      } else {
+        resume.referentielsNonSupprimes += 1;
+        const message = `Référentiel ${configuration.libelle} #${idReference} non supprimé`;
+        erreurs.push(message);
+        ajouterLog(message);
+      }
+    }
+  }
+}
+
 // ─── RÉINITIALISATION COMPLÈTE ────────────────────────────────────────────────
 
 export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = {}) {
@@ -674,6 +889,9 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
     elementsTrouves: 0,
     elementsSupprimes: 0,
     elementsNonSupprimes: 0,
+    referentielsTrouves: 0,
+    referentielsSupprimes: 0,
+    referentielsNonSupprimes: 0,
     documentsTrouves: 0,
     liensDocumentsSupprimes: 0,
     documentsSupprimes: 0,
@@ -686,19 +904,25 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
   };
 
   ajouterLog('Récupération des données métier détectées');
-  const [tickets, relations, couts, elements] = await Promise.all([
-    recupererTicketsV2().catch((erreur) => {
-      erreurs.push(`Tickets v2 : ${recupererMessageErreur(erreur)}`);
-      ajouterLog(`Erreur récupération tickets v2 : ${recupererMessageErreur(erreur)}`);
+  const [tickets, elements] = await Promise.all([
+    recupererTicketsImportes().catch((erreur) => {
+      erreurs.push(`Tickets importés : ${recupererMessageErreur(erreur)}`);
+      ajouterLog(`Erreur récupération tickets importés : ${recupererMessageErreur(erreur)}`);
       return [];
     }),
-    recupererRelationsItemTicketV1(),
-    recupererCoutsTicketV1(),
     recupererElementsV2().catch((erreur) => {
       erreurs.push(`Assets v2 : ${recupererMessageErreur(erreur)}`);
       ajouterLog(`Erreur récupération assets v2 : ${recupererMessageErreur(erreur)}`);
       return [];
     }),
+  ]);
+
+  const idsTicketsImportes = new Set(tickets.map((t) => String(t.id)));
+  const idsAssetsImportes = new Set(elements.map((el) => `${el.itemtype}#${String(el.id)}`));
+
+  const [relations, couts] = await Promise.all([
+    recupererRelationsImportees(idsTicketsImportes, idsAssetsImportes),
+    recupererCoutsImportes(),
   ]);
 
   resume.ticketsTrouves = tickets.length;
@@ -776,6 +1000,9 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
       ajouterLog(`Erreur ${message}`);
     }
   }
+
+  // Suppression des référentiels devenus orphelins après suppression des assets
+  await supprimerReferentielsAssetsOrphelins(elements, ajouterLog, resume, erreurs);
 
   if (supprimerUtilisateursImportes) {
     ajouterLog('Recherche utilisateurs importés');
