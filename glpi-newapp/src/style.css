@@ -832,6 +832,150 @@ td input[type="checkbox"] {
   color: #5e6a7d;
 }
 
+/* ─── Compteur d'éléments ──────────────────────────────────────────────── */
+.elements-compteur {
+  font-size: 0.85rem;
+  color: #475467;
+  margin: 0;
+}
+
+/* ─── Grille de cartes éléments ──────────────────────────────────────── */
+.grille-cartes-elements {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+/* ─── Carte individuelle ─────────────────────────────────────────────── */
+.carte-element-fiche {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d8deea;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.carte-element-fiche:hover {
+  box-shadow: 0 6px 20px rgba(23, 32, 51, 0.10);
+  transform: translateY(-2px);
+}
+
+/* ─── Zone image ─────────────────────────────────────────────────────── */
+.carte-element-image {
+  width: 100%;
+  height: 152px;
+  background: #f5f7fb;
+  border-bottom: 1px solid #e7ebf2;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.carte-element-image--photo {
+  object-fit: contain;
+  padding: 8px;
+}
+
+.carte-element-image--vide svg {
+  width: 44px;
+  height: 44px;
+  color: #c2cad6;
+}
+
+.carte-element-image--chargement {
+  animation: pulse-image 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-image {
+  0%, 100% { background-color: #f5f7fb; }
+  50%       { background-color: #e7ebf2; }
+}
+
+/* ─── Corps de la carte ──────────────────────────────────────────────── */
+.carte-element-fiche__corps {
+  flex: 1;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.carte-element-fiche__entete {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.carte-element-fiche__nom {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #172033;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.carte-element-fiche__badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #eef2f7;
+  color: #475467;
+  width: fit-content;
+}
+
+/* ─── Infos ──────────────────────────────────────────────────────────── */
+.carte-element-fiche__infos {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.83rem;
+  color: #475467;
+}
+
+.carte-element-fiche__info-ligne {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.carte-element-fiche__info-libelle {
+  color: #9eaab8;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+}
+
+/* ─── Statut ─────────────────────────────────────────────────────────── */
+.carte-element-fiche__statut {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.statut-production  { background: #dcfce7; color: #166534; }
+.statut-maintenance { background: #fef3c7; color: #92400e; }
+.statut-panne       { background: #fee2e2; color: #b42318; }
+.statut-stock       { background: #dbeafe; color: #1d4ed8; }
+.statut-defaut      { background: #eef2f7; color: #475467; }
+
+/* ─── Bouton action ──────────────────────────────────────────────────── */
+.carte-element-fiche__action {
+  padding: 12px 14px;
+  border-top: 1px solid #e7ebf2;
+}
+
+.carte-element-fiche__action button {
+  width: 100%;
+}
+
 @media (max-width: 640px) {
   .choice-grid {
     grid-template-columns: 1fr;

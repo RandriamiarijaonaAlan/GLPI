@@ -201,9 +201,19 @@ export async function recupererDocumentsImagesImportes() {
   }
 }
 
+async function recupererTousLesDocuments() {
+  try {
+    const reponse = await clientGlpiLegacy.get('/Document?range=0-9999');
+    return convertirEnTableau(reponse.data);
+  } catch {
+    return [];
+  }
+}
+
 export async function recupererLiensDocuments() {
   try {
-    const reponse = await clientGlpiLegacy.get('/Document_Item?range=0-999&expand_dropdowns=true');
+    // Sans expand_dropdowns : documents_id et items_id restent des IDs numériques
+    const reponse = await clientGlpiLegacy.get('/Document_Item?range=0-999');
     return convertirEnTableau(reponse.data);
   } catch {
     return [];
@@ -235,41 +245,90 @@ export async function supprimerDocumentImage(idDocument) {
   }
 }
 
-async function supprimerDocumentsImagesImportes(ajouterLog, resume) {
+async function supprimerDocumentsImagesImportes(ajouterLog, resume, elementsImportes = []) {
   ajouterLog('Recherche des documents images importés');
 
-  const documents = await recupererDocumentsImagesImportes();
-  resume.documentsTrouves = documents.length;
+  const formatsImages = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg']);
 
-  if (documents.length === 0) {
+  // Noms des éléments importés en minuscule pour correspondance avec le nom de fichier
+  // Exemple : élément "PC-ADM-001" → document "PC-ADM-001.png"
+  const nomsElementsImportes = new Set(
+    elementsImportes
+      .map((el) => String(el.name || el.nom || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  // Charger toutes les liaisons Document_Item (IDs numériques, sans expand_dropdowns)
+  const [liensGlobaux, tousLesDocumentsGlpi] = await Promise.all([
+    recupererLiensDocuments(),
+    recupererTousLesDocuments(),
+  ]);
+
+  // Construire la map document → liens ET détecter les docs liés à des éléments importés
+  const clesElementsImportes = new Set(elementsImportes.map((el) => `${el.itemtype}#${String(el.id)}`));
+  const liensParDocument = new Map();
+  const idsDocumentsASupprimer = new Set();
+
+  for (const lien of liensGlobaux) {
+    const idDocument = String(lien.documents_id || '');
+    if (!idDocument || idDocument === '0') continue;
+
+    if (!liensParDocument.has(idDocument)) liensParDocument.set(idDocument, []);
+    liensParDocument.get(idDocument).push(lien);
+
+    const cleElement = `${lien.itemtype}#${String(lien.items_id || '')}`;
+    if (clesElementsImportes.has(cleElement)) {
+      idsDocumentsASupprimer.add(idDocument);
+    }
+  }
+
+  // Détecter aussi les documents par :
+  // 1. nom de fichier correspondant à un élément importé
+  // 2. commentaire portant le marqueur
+  // 3. document image orphelin (aucune liaison Document_Item) — artefacts d'imports précédents
+  for (const doc of tousLesDocumentsGlpi) {
+    const idDoc = String(doc.id);
+    const nomDoc = String(doc.name || '').trim();
+    const dernierPoint = nomDoc.lastIndexOf('.');
+    if (dernierPoint <= 0) continue;
+
+    const extension = nomDoc.slice(dernierPoint + 1).toLowerCase();
+    if (!formatsImages.has(extension)) continue;
+
+    const nomSansExtension = nomDoc.slice(0, dernierPoint).toLowerCase();
+    const estOrphelin = !liensParDocument.has(idDoc);
+
+    if (
+      nomsElementsImportes.has(nomSansExtension) ||
+      documentEstMarquePourSuppression(doc) ||
+      estOrphelin
+    ) {
+      idsDocumentsASupprimer.add(idDoc);
+    }
+  }
+
+  // Construire la liste finale des documents à supprimer avec leurs données
+  const indexDocuments = new Map(tousLesDocumentsGlpi.map((d) => [String(d.id), d]));
+  const tousLesDocuments = [...idsDocumentsASupprimer]
+    .map((id) => indexDocuments.get(id))
+    .filter(Boolean);
+
+  resume.documentsTrouves = tousLesDocuments.length;
+
+  if (tousLesDocuments.length === 0) {
     ajouterLog('Aucun document image trouvé');
     return;
   }
 
-  ajouterLog(`${documents.length} documents images trouvés`);
+  ajouterLog(`${tousLesDocuments.length} document(s) image(s) trouvé(s)`);
 
-  const liensParDocument = new Map();
-  const liensGlobaux = await recupererLiensDocuments();
-
-  for (const lien of liensGlobaux) {
-    const idDocument = String(extraireIdDocumentDepuisLien(lien) || '');
-    if (!idDocument) continue;
-    if (!liensParDocument.has(idDocument)) {
-      liensParDocument.set(idDocument, []);
-    }
-    liensParDocument.get(idDocument).push(lien);
-  }
-
-  for (const document of documents) {
+  for (const document of tousLesDocuments) {
     const idDocument = String(document?.id || '');
     const nomDocument = recupererNomDocument(document);
     const liensDocument = liensParDocument.get(idDocument) || [];
-    const estMarque = documentEstMarquePourSuppression(document);
 
-    if (!estMarque && liensDocument.length === 0) {
-      ajouterLog(`Document ${nomDocument} : aucun lien Document_Item trouvé, suppression directe du document`);
-    } else if (liensDocument.length === 0) {
-      ajouterLog(`Document ${nomDocument} : aucun lien Document_Item trouvé, suppression directe du document`);
+    if (liensDocument.length === 0) {
+      ajouterLog(`Document ${nomDocument} : aucun lien Document_Item, suppression directe`);
     }
 
     let erreurLien = false;
@@ -277,8 +336,7 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume) {
       try {
         await supprimerLienDocumentElement(lien.id);
         resume.liensDocumentsSupprimes += 1;
-        ajouterLog(`Suppression du lien Document_Item #${lien.id}`);
-        ajouterLog(`Document_Item supprimé #${lien.id}`);
+        ajouterLog(`Document_Item #${lien.id} supprimé`);
       } catch (erreur) {
         erreurLien = true;
         resume.documentsNonSupprimes += 1;
@@ -286,9 +344,7 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume) {
       }
     }
 
-    if (erreurLien && liensDocument.length > 0) {
-      continue;
-    }
+    if (erreurLien && liensDocument.length > 0) continue;
 
     ajouterLog(`Suppression Document #${idDocument} ${nomDocument}`);
     const supprime = await supprimerDocumentImage(idDocument);
@@ -296,14 +352,14 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume) {
       const verification = await verifierSuppressionDocument(idDocument);
       if (verification.supprime) {
         resume.documentsSupprimes += 1;
-        ajouterLog(`Document ${nomDocument} supprimé avec succès`);
+        ajouterLog(`Document ${nomDocument} supprimé`);
       } else {
         resume.documentsNonSupprimes += 1;
         ajouterLog(`Document ${nomDocument} toujours présent après suppression`);
       }
     } else {
       resume.documentsNonSupprimes += 1;
-      ajouterLog(`Document image #${idDocument} non supprimé`);
+      ajouterLog(`Document #${idDocument} non supprimé`);
     }
   }
 }
@@ -959,7 +1015,8 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
   }
 
   // Suppression des liens Document_Item puis des documents images GLPI
-  await supprimerDocumentsImagesImportes(ajouterLog, resume);
+  // On passe les éléments importés pour retrouver aussi les docs sans marqueur
+  await supprimerDocumentsImagesImportes(ajouterLog, resume, elements);
 
   // Suppression des tickets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${tickets.length} tickets récupérés via API v2`);

@@ -30,8 +30,41 @@ export function nettoyerNomImage(nomFichier) {
   return nomSansExtension.trim();
 }
 
-// Lit un fichier ZIP et retourne les images reconnues ainsi que les fichiers système ignorés
-// Ignore les dossiers, les fichiers système macOS et les fichiers non image
+// Convertit un Blob image quelconque en JPEG via un canvas navigateur.
+// Les PNG transparents reçoivent un fond blanc avant conversion.
+// Retourne le Blob JPEG, ou le Blob original si la conversion échoue.
+function convertirBlobEnJpeg(blob) {
+  return new Promise((resoudre) => {
+    const urlBlob = URL.createObjectURL(blob);
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(urlBlob);
+      canvas.toBlob(
+        (blobJpeg) => resoudre(blobJpeg || blob),
+        'image/jpeg',
+        0.90,
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(urlBlob);
+      resoudre(blob);
+    };
+
+    img.src = urlBlob;
+  });
+}
+
+// Lit un fichier ZIP et retourne les images reconnues ainsi que les fichiers système ignorés.
+// Toutes les images sont normalisées en JPEG avant l'upload pour garantir la compatibilité GLPI.
 // Retourne { images, fichiersSystemeIgnores }
 export async function lireFichierZip(fichierZip, ajouterLog = () => {}) {
   const zip = await JSZip.loadAsync(fichierZip);
@@ -41,7 +74,6 @@ export async function lireFichierZip(fichierZip, ajouterLog = () => {}) {
   zip.forEach((cheminRelatif, entree) => {
     if (entree.dir) return;
 
-    // Extraire le nom seul, sans le chemin de sous-dossier éventuel
     const nomFichier = cheminRelatif.split('/').pop();
     if (!nomFichier) return;
 
@@ -56,13 +88,24 @@ export async function lireFichierZip(fichierZip, ajouterLog = () => {}) {
     if (!EXTENSIONS_IMAGES_ACCEPTEES.includes(extension)) return;
 
     promessesImages.push(
-      entree.async('blob').then((blob) => ({
-        nomFichier,
-        nomSansExtension,
-        extension,
-        blob,
-        taille: blob.size,
-      }))
+      entree.async('blob').then(async (blob) => {
+        const estDejaJpeg = extension === 'jpg' || extension === 'jpeg';
+
+        // Convertir en JPEG si nécessaire : évite les problèmes de MIME type avec GLPI
+        const blobFinal = estDejaJpeg
+          ? new Blob([blob], { type: 'image/jpeg' })
+          : await convertirBlobEnJpeg(blob);
+
+        const nomFichierFinal = `${nomSansExtension}.jpeg`;
+
+        return {
+          nomFichier: nomFichierFinal,
+          nomSansExtension,
+          extension: 'jpeg',
+          blob: blobFinal,
+          taille: blobFinal.size,
+        };
+      }),
     );
   });
 

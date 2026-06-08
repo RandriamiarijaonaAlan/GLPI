@@ -1,6 +1,8 @@
+import axios from 'axios';
 import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
 import { afficherValeurGlpi } from '../utils/affichage';
+import { garantirSessionLegacy } from './authApi';
 
 const libellesTypesElements = {
   Computer: 'Ordinateur',
@@ -263,6 +265,68 @@ function dedupliquerElements(elements) {
 // Vérifie que les éléments retournés par l'API ont des données utilisables (au moins un name non vide)
 function reponseContientDonnees(elements) {
   return elements.length > 0 && elements.some((el) => !valeurVide(el.nom));
+}
+
+// Charge toutes les liaisons Document_Item + métadonnées Document pour filtrer les images.
+// Retourne une Map : "itemtype#id" → idDocument (ex. "Computer#103" → 5)
+export async function recupererDocumentsParElement() {
+  const formatsImages = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg']);
+  try {
+    // Sans expand_dropdowns : les champs documents_id et items_id restent des IDs numériques
+    const [reponseRelations, reponseDocuments] = await Promise.all([
+      clientGlpiLegacy.get('/Document_Item?range=0-9999'),
+      clientGlpiLegacy.get('/Document?range=0-9999'),
+    ]);
+    const relations = normaliserListeElements(reponseRelations.data);
+    const documents = normaliserListeElements(reponseDocuments.data);
+
+    const indexDocuments = new Map(documents.map((d) => [String(d.id), d]));
+    const mapDocuments = new Map();
+
+    for (const relation of relations) {
+      const { itemtype, items_id: itemsId, documents_id: documentsId } = relation;
+      if (!itemtype || !itemsId || !documentsId) continue;
+
+      const doc = indexDocuments.get(String(documentsId));
+      if (!doc) continue;
+
+      // Ne garder que les documents avec un fichier réellement stocké dans GLPI
+      if (!doc.filepath) continue;
+
+      const extension = (doc.filename || doc.name || '').split('.').pop().toLowerCase();
+      if (!formatsImages.has(extension)) continue;
+
+      const cle = `${itemtype}#${itemsId}`;
+      if (!mapDocuments.has(cle)) {
+        mapDocuments.set(cle, Number(doc.id));
+      }
+    }
+    return mapDocuments;
+  } catch {
+    return new Map();
+  }
+}
+
+// Télécharge un document GLPI en blob et retourne une URL objet utilisable dans <img src>.
+// L'appelant est responsable de révoquer l'URL via URL.revokeObjectURL quand elle n'est plus nécessaire.
+export async function chargerUrlImageDocument(idDocument) {
+  try {
+    const jeton = await garantirSessionLegacy();
+    const reponse = await axios.get(
+      `${import.meta.env.VITE_GLPI_LEGACY_API_URL}/Document/${idDocument}`,
+      {
+        responseType: 'blob',
+        headers: {
+          Accept: 'application/octet-stream',
+          'App-Token': import.meta.env.VITE_GLPI_APP_TOKEN,
+          'Session-Token': jeton,
+        },
+      },
+    );
+    return URL.createObjectURL(reponse.data);
+  } catch {
+    return null;
+  }
 }
 
 export async function recupererTousLesElements() {

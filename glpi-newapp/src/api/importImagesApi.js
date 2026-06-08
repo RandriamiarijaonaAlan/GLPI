@@ -41,6 +41,12 @@ function extraireIdDocument(donnees) {
   return null;
 }
 
+// Retourne le MIME type correct selon l'extension pour que GLPI accepte l'upload
+function mimeTypePourExtension(extension) {
+  const types = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+  return types[(extension || '').toLowerCase()] || 'application/octet-stream';
+}
+
 // Téléverse une image comme Document GLPI via multipart/form-data (API v1 legacy)
 // Exception JSON justifiée : GLPI exige multipart/form-data pour l'upload de fichiers
 export async function televerserImageCommeDocument(image) {
@@ -49,16 +55,20 @@ export async function televerserImageCommeDocument(image) {
   const formData = new FormData();
 
   // Le manifest décrit le Document à créer côté GLPI
+  // Le commentaire porte le marqueur pour que la réinitialisation retrouve ces documents
   const manifest = JSON.stringify({
     input: {
       name: image.nomFichier,
       _filename: [image.nomFichier],
+      comment: 'NEWAPP_IMPORT_JUIN_2026',
     },
   });
   formData.append('uploadManifest', manifest);
 
-  // Fichier image sous forme de Blob avec son nom d'origine
-  formData.append('filename[0]', image.blob, image.nomFichier);
+  // Forcer le MIME type selon l'extension : JSZip retourne parfois application/octet-stream
+  // ce qui empêche GLPI de stocker le fichier (filepath reste null)
+  const blobTypé = new Blob([image.blob], { type: mimeTypePourExtension(image.extension) });
+  formData.append('filename[0]', blobTypé, image.nomFichier);
 
   const reponse = await axios.post(
     `${import.meta.env.VITE_GLPI_LEGACY_API_URL}/Document`,
