@@ -10,6 +10,8 @@ import ReinitialisationDonnees from './backoffice/pages/ReinitialisationDonnees'
 import Accueil from './frontoffice/pages/Accueil';
 import ListeElements from './frontoffice/pages/ListeElements';
 import CreationTicket from './frontoffice/pages/CreationTicket';
+import ConfigurationKanban from './backoffice/pages/ConfigurationKanban';
+import KanbanTickets from './frontoffice/pages/KanbanTicket';
 
 const routeur = createBrowserRouter(
   [
@@ -52,6 +54,10 @@ const routeur = createBrowserRouter(
               path: 'reset',
               element: <ReinitialisationDonnees />,
             },
+            {
+              path:'kanban-config',
+              element: <ConfigurationKanban />,
+            }
           ],
         },
       ],
@@ -64,6 +70,10 @@ const routeur = createBrowserRouter(
       path: '/front/create-ticket',
       element: <CreationTicket />,
     },
+    {
+      path:'/front/kanban',
+      element: <KanbanTickets />,
+    }
   ],
   {
     future: {
