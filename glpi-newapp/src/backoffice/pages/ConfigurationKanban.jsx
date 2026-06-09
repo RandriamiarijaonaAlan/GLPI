@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import {
-  chargerConfigurationKanban,
-  sauvegarderConfigurationKanban,
-  reinitialiserConfigurationKanban,
-} from "../../utils/kanban";
+  recupererConfigurationKanbanSqlite,
+  sauvegarderConfigurationKanbanSqlite,
+  reinitialiserConfigurationKanbanSqlite,
+} from "../../api/kanbanConfigApi";
 
 export default function ConfigurationKanban() {
   const [configuration, setConfiguration] = useState([]);
   const [messageSucces, setMessageSucces] = useState("");
   const [messageErreur, setMessageErreur] = useState("");
 
-  useEffect(() => {
-    setConfiguration(chargerConfigurationKanban());
-  }, []);
+ useEffect(() => {
+  async function chargerConfiguration() {
+    const donnees = await recupererConfigurationKanbanSqlite();
+    setConfiguration(donnees);
+  }
+
+  chargerConfiguration();
+}, []);
 
   function modifierNomMalgache(code, nouveauNom) {
     setConfiguration((ancienneConfiguration) =>
@@ -34,30 +39,29 @@ export default function ConfigurationKanban() {
     );
   }
 
-  function enregistrerConfiguration() {
-    try {
-      sauvegarderConfigurationKanban(configuration);
-      setMessageSucces("Configuration Kanban enregistrée avec succès.");
-      setMessageErreur("");
-    } catch (erreur) {
-      console.error(erreur);
-      setMessageErreur("Erreur lors de l’enregistrement de la configuration.");
-      setMessageSucces("");
-    }
-  }
-
-  function remettreConfigurationParDefaut() {
-    const confirmation = confirm(
-      "Voulez-vous vraiment réinitialiser la configuration Kanban ?"
-    );
-
-    if (!confirmation) return;
-
-    const configurationDefaut = reinitialiserConfigurationKanban();
-    setConfiguration(configurationDefaut);
-    setMessageSucces("Configuration Kanban réinitialisée.");
+  async function enregistrerConfiguration() {
+  try {
+    await sauvegarderConfigurationKanbanSqlite(configuration);
+    setMessageSucces("Configuration Kanban enregistrée dans SQLite.");
     setMessageErreur("");
+  } catch (erreur) {
+    setMessageErreur("Erreur lors de l’enregistrement SQLite.");
+    setMessageSucces("");
   }
+}
+
+  async function remettreConfigurationParDefaut() {
+  const confirmation = confirm("Réinitialiser la configuration Kanban ?");
+
+  if (!confirmation) return;
+
+  await reinitialiserConfigurationKanbanSqlite();
+
+  const donnees = await recupererConfigurationKanbanSqlite();
+  setConfiguration(donnees);
+
+  setMessageSucces("Configuration Kanban réinitialisée.");
+}
 
   return (
     <div style={{ padding: "24px" }}>
