@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { recupererDetailTicketKanban } from "../../api/kanbanApi";
 import {
   chargerConfigurationKanban,
   convertirColonneKanbanVersStatutGlpi,
@@ -17,6 +18,25 @@ export default function KanbanTickets() {
   const [erreur, setErreur] = useState("");
   const [ticketGlisse, setTicketGlisse] = useState(null);
   const [ticketDetail, setTicketDetail] = useState(null);
+  const [detailTicket, setDetailTicket] = useState(null);
+const [chargementDetail, setChargementDetail] = useState(false);
+
+async function ouvrirDetailTicket(idTicket) {
+  try {
+    setChargementDetail(true);
+
+    const detail = await recupererDetailTicketKanban(idTicket);
+
+    setDetailTicket(detail);
+  } catch (erreur) {
+    console.error(erreur);
+    alert("Impossible de charger le détail complet du ticket.");
+  } finally {
+    setChargementDetail(false);
+  }
+}
+
+
 
   async function chargerDonnees() {
     try {
@@ -104,7 +124,7 @@ export default function KanbanTickets() {
         </div>
       </div>
 
-      {chargement && <p>Chargement des tickets...</p>}
+      {chargementDetail && <p>Chargement des tickets...</p>}
       {erreur && <p style={styles.erreur}>{erreur}</p>}
 
       <div style={styles.kanban}>
@@ -135,7 +155,7 @@ export default function KanbanTickets() {
                     key={ticket.id}
                     draggable
                     onDragStart={() => demarrerGlissement(ticket)}
-                    onClick={() => setTicketDetail(ticket)}
+                    onClick={() => ouvrirDetailTicket(ticket.id)}
                     style={styles.carte}
                   >
                     <strong>{ticket.name || ticket.titre || `Ticket #${ticket.id}`}</strong>
@@ -149,23 +169,40 @@ export default function KanbanTickets() {
           })}
       </div>
 
-      {ticketDetail && (
-        <div style={styles.modalFond} onClick={() => setTicketDetail(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2>Détail ticket #{ticketDetail.id}</h2>
+      {detailTicket && (
+  <div style={styles.modalFond} onClick={() => setDetailTicket(null)}>
+    <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <h2>Détail complet du ticket #{detailTicket.ticket.id}</h2>
 
-            <p><strong>Titre :</strong> {ticketDetail.name || "-"}</p>
-            <p><strong>Description :</strong> {ticketDetail.content || "-"}</p>
-            <p><strong>Statut :</strong> {ticketDetail.status?.name || ticketDetail.status || "-"}</p>
-            <p><strong>Priorité :</strong> {ticketDetail.priority?.name || ticketDetail.priority || "-"}</p>
-            <p><strong>Date :</strong> {ticketDetail.date_creation || ticketDetail.date || "-"}</p>
+      <p><strong>Titre :</strong> {detailTicket.ticket.name || "-"}</p>
+      <p><strong>Description :</strong> {detailTicket.ticket.content || "-"}</p>
+      <p><strong>Statut :</strong> {detailTicket.ticket.status?.name || detailTicket.ticket.status || "-"}</p>
+      <p><strong>Type :</strong> {detailTicket.ticket.type?.name || detailTicket.ticket.type || "-"}</p>
+      <p><strong>Priorité :</strong> {detailTicket.ticket.priority?.name || detailTicket.ticket.priority || "-"}</p>
+      <p><strong>Urgence :</strong> {detailTicket.ticket.urgency?.name || detailTicket.ticket.urgency || "-"}</p>
+      <p><strong>Date création :</strong> {detailTicket.ticket.date_creation || detailTicket.ticket.date || "-"}</p>
+      <p><strong>Date modification :</strong> {detailTicket.ticket.date_mod || "-"}</p>
 
-            <button onClick={() => setTicketDetail(null)} style={styles.bouton}>
-              Fermer
-            </button>
-          </div>
-        </div>
+      <h3>Éléments liés</h3>
+
+      {detailTicket.elementsLies.length === 0 ? (
+        <p>Aucun élément lié.</p>
+      ) : (
+        <ul>
+          {detailTicket.elementsLies.map((element, index) => (
+            <li key={element.id || index}>
+              {element.itemtype || "-"} #{element.items_id || element.id || "-"}
+            </li>
+          ))}
+        </ul>
       )}
+
+      <button onClick={() => setDetailTicket(null)} style={styles.bouton}>
+        Fermer
+      </button>
+    </div>
+  </div>
+)}
     </div>
   );
 }
