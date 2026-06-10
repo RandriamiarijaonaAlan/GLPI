@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { recupererDetailTicketKanban } from "../../api/kanbanApi";
 import {
   chargerConfigurationKanban,
@@ -7,11 +8,11 @@ import {
 } from "../../utils/kanban";
 import {
   recupererTicketsKanban,
-  creerTicketKanban,
   modifierStatutTicketKanban,
 } from "../../api/kanbanApi";
 
 export default function KanbanTickets() {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [configuration, setConfiguration] = useState([]);
   const [chargement, setChargement] = useState(false);
@@ -59,23 +60,8 @@ async function ouvrirDetailTicket(idTicket) {
     chargerDonnees();
   }, []);
 
-  async function ajouterTicketRapide() {
-    const titre = prompt("Titre du ticket :");
-
-    if (!titre) return;
-
-    try {
-      await creerTicketKanban({
-        titre,
-        description: "Ticket créé depuis le Kanban",
-        priorite: 3,
-      });
-
-      await chargerDonnees();
-    } catch (e) {
-      console.error(e);
-      alert("Erreur lors de la création du ticket.");
-    }
+  function ajouterTicketRapide() {
+    navigate("/front/create-ticket");
   }
 
   function demarrerGlissement(ticket) {
