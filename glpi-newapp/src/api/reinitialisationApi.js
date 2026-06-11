@@ -603,7 +603,7 @@ export async function supprimerElementRobuste(element, ajouterLog) {
 // ─── RÉCUPÉRATION ─────────────────────────────────────────────────────────────
 
 export async function recupererTicketsV2() {
-  const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=500');
+  const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=9500');
   return convertirEnTableau(reponse.data).map(normaliserTicket);
 }
 
@@ -665,7 +665,7 @@ export async function recupererElementsV2() {
 
 export async function recupererRelationsItemTicketV1() {
   try {
-    const reponse = await clientGlpiLegacy.get('/Item_Ticket?range=0-999&expand_dropdowns=true');
+    const reponse = await clientGlpiLegacy.get('/Item_Ticket?range=0-9999&expand_dropdowns=true');
     return convertirEnTableau(reponse.data);
   } catch {
     return [];
@@ -742,7 +742,7 @@ async function recupererTicketsRestantsPourUtilisateur() {
     return await recupererTicketsV2();
   } catch {
     try {
-      const reponse = await clientGlpiLegacy.get('/Ticket?range=0-999&expand_dropdowns=true');
+      const reponse = await clientGlpiLegacy.get('/Ticket?range=0-9999&expand_dropdowns=true');
       return convertirEnTableau(reponse.data);
     } catch {
       return null;

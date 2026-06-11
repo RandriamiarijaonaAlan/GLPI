@@ -1295,11 +1295,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
   cacheElementsTicketImport = null;
   indexElementsTicketImport = null;
 
-  const [ticketsExistants, coutsExistants] = await Promise.all([
-    chargerTousLesTickets(),
-    chargerTousLesCoutsTicket(),
-  ]);
-  const indexCoutsTickets = construireIndexCoutsTickets(coutsExistants);
+  const ticketsExistants = await chargerTousLesTickets();
   const indexDoublonsTickets = construireIndexDoublonsTickets(ticketsExistants);
 
   for (const ligne of donnees) {
@@ -1454,7 +1450,11 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 export async function importerCoutsCsv(donnees, ajouterLog) {
   const resultat = { importes: 0, coutsIgnores: 0, erreursCouts: 0, erreurs: 0, avertissements: [] };
 
-  const ticketsExistants = await chargerTousLesTickets();
+  const [ticketsExistants, coutsExistants] = await Promise.all([
+    chargerTousLesTickets(),
+    chargerTousLesCoutsTicket(),
+  ]);
+  const indexCoutsTickets = construireIndexCoutsTickets(coutsExistants);
 
   for (const ligne of donnees) {
     const numTicket = String(valeurColonneCsv(ligne, 'num_ticket') ?? '').trim();

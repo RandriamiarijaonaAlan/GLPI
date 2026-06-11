@@ -177,7 +177,15 @@ async function ouvrirDetailTicket(idTicket) {
         <ul>
           {detailTicket.elementsLies.map((element, index) => (
             <li key={element.id || index}>
-              {element.itemtype || "-"} #{element.items_id || element.id || "-"}
+              <strong>{element.nom || "-"}</strong>
+              <br />
+              <span>{element.itemtype || "-"} #{element.items_id || element.id || "-"}</span>
+              <br />
+              <span>Statut : {element.statut || "-"}</span>
+              <br />
+              <span>Localisation : {element.localisation || "-"}</span>
+              <br />
+              <span>Inventaire : {element.numeroInventaire || "-"}</span>
             </li>
           ))}
         </ul>
