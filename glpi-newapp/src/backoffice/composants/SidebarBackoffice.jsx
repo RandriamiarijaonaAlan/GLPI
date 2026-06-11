@@ -5,9 +5,10 @@ const liensBackoffice = [
   ['Tableau de bord', '/admin/dashboard'],
   ['Tickets', '/admin/tickets'],
   ['Import fichiers', '/admin/import'],
-  ['Réinitialisation', '/admin/reset'],
-  ['FrontOffice éléments', '/front/elements'],
-  ['Créer ticket FrontOffice', '/front/create-ticket'],
+  ['RÃ©initialisation', '/admin/reset'],
+  ['Kanban Config', '/admin/kanban-config'],
+  ['FrontOffice Ã©lÃ©ments', '/front/elements'],
+  ['CrÃ©er ticket FrontOffice', '/front/create-ticket'],
 ];
 
 export default function SidebarBackoffice() {
@@ -40,7 +41,7 @@ export default function SidebarBackoffice() {
       </nav>
 
       <button className="bouton-deconnexion" type="button" onClick={gererDeconnexion}>
-        Déconnexion
+        DÃ©connexion
       </button>
     </aside>
   );

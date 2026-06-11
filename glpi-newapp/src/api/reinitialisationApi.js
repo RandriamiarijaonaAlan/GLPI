@@ -76,6 +76,21 @@ function recupererMessageErreur(erreur) {
   return erreur?.message || 'Erreur inconnue';
 }
 
+async function executerAvecConcurrence(elements, limite, traiter) {
+  let index = 0;
+
+  async function executerTacheSuivante() {
+    while (index < elements.length) {
+      const indexCourant = index;
+      index += 1;
+      await traiter(elements[indexCourant], indexCourant);
+    }
+  }
+
+  const nombreExecutants = Math.min(limite, elements.length);
+  await Promise.all(Array.from({ length: nombreExecutants }, executerTacheSuivante));
+}
+
 function extraireIdGlpi(valeur) {
   if (valeur === null || valeur === undefined || valeur === '') {
     return null;
@@ -322,7 +337,7 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume, elementsImpo
 
   ajouterLog(`${tousLesDocuments.length} document(s) image(s) trouvé(s)`);
 
-  for (const document of tousLesDocuments) {
+  await executerAvecConcurrence(tousLesDocuments, 4, async (document) => {
     const idDocument = String(document?.id || '');
     const nomDocument = recupererNomDocument(document);
     const liensDocument = liensParDocument.get(idDocument) || [];
@@ -332,7 +347,7 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume, elementsImpo
     }
 
     let erreurLien = false;
-    for (const lien of liensDocument) {
+    await executerAvecConcurrence(liensDocument, 6, async (lien) => {
       try {
         await supprimerLienDocumentElement(lien.id);
         resume.liensDocumentsSupprimes += 1;
@@ -342,9 +357,9 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume, elementsImpo
         resume.documentsNonSupprimes += 1;
         ajouterLog(`Erreur suppression Document_Item #${lien.id} : ${recupererMessageErreur(erreur)}`);
       }
-    }
+    });
 
-    if (erreurLien && liensDocument.length > 0) continue;
+    if (erreurLien && liensDocument.length > 0) return;
 
     ajouterLog(`Suppression Document #${idDocument} ${nomDocument}`);
     const supprime = await supprimerDocumentImage(idDocument);
@@ -361,7 +376,7 @@ async function supprimerDocumentsImagesImportes(ajouterLog, resume, elementsImpo
       resume.documentsNonSupprimes += 1;
       ajouterLog(`Document #${idDocument} non supprimé`);
     }
-  }
+  });
 }
 
 // Formate l'erreur avec le statut HTTP et la réponse GLPI brute pour le journal
@@ -988,7 +1003,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
 
   // Suppression des relations Item_Ticket (API v1)
   ajouterLog(`${relations.length} relations Item_Ticket récupérées`);
-  for (const relation of relations) {
+  await executerAvecConcurrence(relations, 8, async (relation) => {
     try {
       await supprimerRelationItemTicketV1(relation.id);
       resume.relationsSupprimees += 1;
@@ -998,11 +1013,11 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
-  }
+  });
 
   // Suppression des coûts TicketCost (API v1 avec force_purge)
   ajouterLog(`${couts.length} coûts TicketCost récupérés`);
-  for (const cout of couts) {
+  await executerAvecConcurrence(couts, 8, async (cout) => {
     try {
       await supprimerCoutTicketV1(cout.id);
       resume.coutsSupprimes += 1;
@@ -1012,7 +1027,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
-  }
+  });
 
   // Suppression des liens Document_Item puis des documents images GLPI
   // On passe les éléments importés pour retrouver aussi les docs sans marqueur
@@ -1020,7 +1035,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
 
   // Suppression des tickets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${tickets.length} tickets récupérés via API v2`);
-  for (const ticket of tickets) {
+  await executerAvecConcurrence(tickets, 3, async (ticket) => {
     try {
       const supprime = await supprimerTicketRobuste(ticket.id, ajouterLog);
       if (supprime) {
@@ -1036,11 +1051,11 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
-  }
+  });
 
   // Suppression des éléments/assets avec fallback robuste v2 → v1 force_purge → v1 simple
   ajouterLog(`${elements.length} éléments/assets récupérés via API v2`);
-  for (const element of elements) {
+  await executerAvecConcurrence(elements, 3, async (element) => {
     try {
       const supprime = await supprimerElementRobuste(element, ajouterLog);
       if (supprime) {
@@ -1056,7 +1071,7 @@ export async function reinitialiserToutesLesDonneesMetier(ajouterLog, options = 
       erreurs.push(message);
       ajouterLog(`Erreur ${message}`);
     }
-  }
+  });
 
   // Suppression des référentiels devenus orphelins après suppression des assets
   await supprimerReferentielsAssetsOrphelins(elements, ajouterLog, resume, erreurs);

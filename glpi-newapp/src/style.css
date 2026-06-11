@@ -247,6 +247,86 @@ button:disabled {
   gap: 24px;
 }
 
+.layout-frontoffice {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.sidebar-frontoffice {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100vh;
+  padding: 24px 18px;
+  background: #0f3d3e;
+  color: #ffffff;
+}
+
+.marque-frontoffice {
+  display: grid;
+  gap: 4px;
+}
+
+.marque-frontoffice strong {
+  font-size: 1.15rem;
+}
+
+.marque-frontoffice span {
+  color: #b7dfd8;
+  font-weight: 700;
+}
+
+.navigation-frontoffice {
+  display: grid;
+  gap: 8px;
+}
+
+.lien-frontoffice {
+  display: block;
+  padding: 11px 12px;
+  border-radius: 6px;
+  color: #d7eeeb;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.lien-frontoffice:hover,
+.lien-frontoffice.actif {
+  background: #16837a;
+  color: #ffffff;
+}
+
+.zone-frontoffice {
+  min-width: 0;
+}
+
+.entete-frontoffice {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 32px;
+  border-bottom: 1px solid #d8deea;
+  background: #ffffff;
+}
+
+.entete-frontoffice h1 {
+  font-size: 1.35rem;
+}
+
+.contenu-frontoffice {
+  padding: 32px;
+}
+
+.contenu-frontoffice main {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 .elements-page {
   width: min(1280px, calc(100% - 32px));
 }
@@ -997,13 +1077,20 @@ td input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 
-  .sidebar-backoffice {
+  .layout-frontoffice {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-backoffice,
+  .sidebar-frontoffice {
     position: static;
     height: auto;
   }
 
   .entete-backoffice,
-  .contenu-backoffice {
+  .contenu-backoffice,
+  .entete-frontoffice,
+  .contenu-frontoffice {
     padding: 20px;
   }
 }

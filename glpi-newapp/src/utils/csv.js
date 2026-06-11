@@ -1,7 +1,7 @@
 // Colonnes caractéristiques de chaque type CSV reconnu
-const COLONNES_ASSET = ['Name', 'Status', 'Location', 'Manufacturer', 'Item_Type', 'Model', 'Inventory_Number', 'User'];
-const COLONNES_TICKET = ['Ref_Ticket', 'Date', 'Heure', 'Type', 'Titre', 'Description', 'Status', 'Priority', 'Items'];
-const COLONNES_COUT = ['Num_Ticket', 'Duration_second', 'Time_Cost', 'Fixed_Cost'];
+const COLONNES_ASSET = ['name', 'status', 'location', 'manufacturer', 'item_type', 'model', 'inventory_number', 'user'];
+const COLONNES_TICKET = ['ref_ticket', 'date', 'heure', 'type', 'titre', 'description', 'status', 'priority', 'items'];
+const COLONNES_COUT = ['num_ticket', 'duration_second', 'time_cost', 'fixed_cost'];
 
 // Retourne true si le texte contient des séquences typiques de double-encodage UTF-8/Latin-1
 // (ex : "Ã©" au lieu de "é", "Ã " au lieu de "à")
@@ -79,6 +79,10 @@ function decouperLigneCsv(ligne, separateur) {
 
 // Convertit un texte CSV en tableau d'objets JSON
 // Supporte UTF-8, séparateur ; et ,, ignore les lignes vides et nettoie les espaces
+function normaliserNomColonne(colonne) {
+  return String(colonne || '').trim().toLowerCase();
+}
+
 export function convertirCsvEnJson(texteCsv) {
   if (!texteCsv || !texteCsv.trim()) {
     return [];
@@ -100,7 +104,7 @@ export function convertirCsvEnJson(texteCsv) {
     return [];
   }
 
-  const colonnes = decouperLigneCsv(lignes[indexEntete], separateur).map((col) => col.trim());
+  const colonnes = decouperLigneCsv(lignes[indexEntete], separateur).map(normaliserNomColonne);
 
   const donnees = [];
   for (let i = indexEntete + 1; i < lignes.length; i++) {

@@ -11,6 +11,7 @@ const cacheUtilisateursImport = new Map();
 
 // Cache des éléments par type pour la recherche en cours d'import tickets ; réinitialisé à chaque appel
 let cacheElementsTicketImport = null;
+let indexElementsTicketImport = null;
 
 // Compteur des référentiels créés pendant l'import assets courant
 let nombreReferentielsCreesImport = 0;
@@ -206,6 +207,20 @@ export function normaliserItemType(valeur) {
 
 function normaliserComparaisonElement(valeur) {
   return normaliserTexteCsv(valeur).replace(/\s+/g, '').toLowerCase();
+}
+
+function valeurColonneCsv(ligne, nomColonne) {
+  const cleLower = String(nomColonne || '').toLowerCase();
+
+  if (Object.prototype.hasOwnProperty.call(ligne, cleLower)) {
+    return ligne[cleLower];
+  }
+
+  if (Object.prototype.hasOwnProperty.call(ligne, nomColonne)) {
+    return ligne[nomColonne];
+  }
+
+  return '';
 }
 
 function formaterErreurApiComplete(erreur) {
@@ -505,6 +520,46 @@ async function chargerTousLesTickets() {
   }
 }
 
+async function chargerTousLesCoutsTicket() {
+  try {
+    const reponse = await clientGlpiLegacy.get('/TicketCost?range=0-9999&expand_dropdowns=true');
+    return normaliserEnTableau(reponse.data);
+  } catch {
+    return [];
+  }
+}
+
+function normaliserNombreCleCout(valeur) {
+  return String(convertirNombreCsv(valeur, 0));
+}
+
+function construireCleCoutTicket(idTicket, numTicket, actiontime = 0, costTime = 0, costFixed = 0) {
+  return [
+    String(idTicket || '').trim(),
+    String(numTicket || '').trim(),
+    normaliserNombreCleCout(actiontime),
+    normaliserNombreCleCout(costTime),
+    normaliserNombreCleCout(costFixed),
+  ].join('#');
+}
+
+function construireIndexCoutsTickets(couts) {
+  const index = new Set();
+
+  for (const cout of couts) {
+    const nom = String(cout.name || '').trim();
+    const correspondance = nom.match(/Ref\s+([^\s]+)/i);
+    const numTicket = correspondance ? correspondance[1].trim() : '';
+    const idTicket = normaliserTexteCsv(cout.tickets_id?.id || cout.tickets_id);
+
+    if (idTicket && numTicket) {
+      index.add(construireCleCoutTicket(idTicket, numTicket, cout.actiontime, cout.cost_time, cout.cost_fixed));
+    }
+  }
+
+  return index;
+}
+
 // Extrait la valeur textuelle d'un champ GLPI qui peut être une chaîne ou un objet expand_dropdowns
 function extraireTexteChamp(valeur) {
   if (valeur === null || valeur === undefined) return '';
@@ -532,14 +587,53 @@ function trouverDoublonElement(elementsExistants, nom, numeroInventaire) {
 }
 
 // Recherche un doublon de ticket par référence dans le contenu ou par titre exact
-function trouverDoublonTicket(tickets, refTicket, titre) {
-  return tickets.find((ticket) => {
-    if (estValide(refTicket) && (ticket.content || '').includes(`Ref_Ticket: ${refTicket}`)) {
-      return true;
+function extraireReferenceTicketDepuisContenu(contenu) {
+  const correspondance = String(contenu || '').match(/Ref_Ticket:\s*([^\n\r]+)/i);
+  return correspondance ? correspondance[1].trim() : '';
+}
+
+function construireIndexDoublonsTickets(tickets) {
+  const parReference = new Map();
+  const parTitre = new Map();
+
+  for (const ticket of tickets) {
+    const reference = extraireReferenceTicketDepuisContenu(ticket.content);
+    const titre = normaliserTexteCsv(ticket.name);
+
+    if (reference && !parReference.has(reference)) {
+      parReference.set(reference, ticket);
     }
-    if (estValide(titre) && (ticket.name || '') === titre) return true;
-    return false;
-  });
+
+    if (titre && !parTitre.has(titre)) {
+      parTitre.set(titre, ticket);
+    }
+  }
+
+  return { parReference, parTitre };
+}
+
+function trouverDoublonTicket(indexDoublonsTickets, refTicket, titre) {
+  const referenceNormalisee = normaliserTexteCsv(refTicket);
+  const titreNormalise = normaliserTexteCsv(titre);
+
+  return (
+    (referenceNormalisee ? indexDoublonsTickets.parReference.get(referenceNormalisee) : null) ||
+    (titreNormalise ? indexDoublonsTickets.parTitre.get(titreNormalise) : null) ||
+    null
+  );
+}
+
+function ajouterTicketDansIndexDoublons(indexDoublonsTickets, ticket) {
+  const reference = extraireReferenceTicketDepuisContenu(ticket.content);
+  const titre = normaliserTexteCsv(ticket.name);
+
+  if (reference) {
+    indexDoublonsTickets.parReference.set(reference, ticket);
+  }
+
+  if (titre) {
+    indexDoublonsTickets.parTitre.set(titre, ticket);
+  }
 }
 
 // Recherche un ticket par référence (Ref_Ticket stocké dans le contenu)
@@ -566,8 +660,8 @@ function formaterDeuxChiffres(valeur) {
 }
 
 function construireDateTicketDepuisCsv(ligne) {
-  const dateBrute = String(ligne?.Date || '').trim();
-  const heureBrute = String(ligne?.Heure || '').trim();
+  const dateBrute = String(valeurColonneCsv(ligne, 'date') || '').trim();
+  const heureBrute = String(valeurColonneCsv(ligne, 'heure') || '').trim();
 
   if (!dateBrute) {
     return { dateGLPI: null, avertissement: 'Date invalide pour ticket, date GLPI par défaut utilisée' };
@@ -710,8 +804,12 @@ function convertirPrioriteTicket(valeur) {
 }
 
 // Convertit la colonne Status du CSV en valeur GLPI (1=Nouveau … 6=Clos)
+function normaliserStatutTicketCsv(valeur) {
+  return normaliserCleTexte(valeur).replace(/[^a-z0-9]/g, '');
+}
+
 function convertirStatutTicket(valeur) {
-  const texte = normaliserCleTexte(valeur);
+  const texte = normaliserStatutTicketCsv(valeur);
   const correspondances = {
     new: 1, nouveau: 1,
     assigned: 2, encoursattribue: 2, encoursattribué: 2,
@@ -719,6 +817,22 @@ function convertirStatutTicket(valeur) {
     waiting: 4, pending: 4, enattente: 4,
     solved: 5, resolved: 5, resolu: 5, résolu: 5,
     closed: 6, clos: 6,
+    open: 1,
+    inprogress: 2,
+    inprogressassigned: 2,
+    encours: 2,
+    encoursassigne: 2,
+    planned: 2,
+    encoursplanifie: 2,
+    waiting: 2,
+    pending: 2,
+    enattente: 2,
+    solved: 6,
+    resolved: 6,
+    resolu: 6,
+    close: 6,
+    ferme: 6,
+    fermee: 6,
   };
   return correspondances[texte] || 1; // Nouveau par défaut
 }
@@ -848,6 +962,16 @@ function relationItemTicketDejaExistante(relationsExistantes, element) {
   });
 }
 
+function construireIndexRelationsTicket(relationsExistantes) {
+  return new Set(
+    relationsExistantes.map((relation) => {
+      const itemtypeRelation = relation.itemtype || relation.items_id?.itemtype || relation.items_id?.type;
+      const itemsIdRelation = relation.items_id?.id || relation.items_id?.items_id || relation.items_id;
+      return normaliserCleRelation(itemtypeRelation, itemsIdRelation);
+    }),
+  );
+}
+
 async function recupererRelationsTicketExistantes(idTicket) {
   try {
     const reponse = await clientGlpiLegacy.get(
@@ -877,6 +1001,30 @@ function trouverElementPourAssociation(elements, nomRecherche) {
 
 // Recherche un élément dans tous les types reconnus par name, serial, otherserial ou inventory_number
 // Charge chaque type à la demande et met en cache le résultat pour l'import en cours
+function ajouterElementDansIndexAssociation(index, element, type) {
+  for (const valeur of [element.name, element.serial, element.otherserial, element.inventory_number]) {
+    const cle = normaliserComparaisonElement(valeur);
+
+    if (cle && !index.has(cle)) {
+      index.set(cle, { ...element, itemtype: itemtypeApiPourType(type) });
+    }
+  }
+}
+
+function construireIndexElementsAssociation(elementsParType) {
+  const index = new Map();
+
+  for (const type of TYPES_ELEMENTS_VALIDES) {
+    const elements = elementsParType[type] || [];
+
+    for (const element of elements) {
+      ajouterElementDansIndexAssociation(index, element, type);
+    }
+  }
+
+  return index;
+}
+
 async function rechercherElementParNomOuInventaire(nomElement, ajouterLog = () => {}) {
   const recherche = normaliserComparaisonElement(nomElement);
   if (!recherche) return null;
@@ -886,7 +1034,20 @@ async function rechercherElementParNomOuInventaire(nomElement, ajouterLog = () =
     for (const type of TYPES_ELEMENTS_VALIDES) {
       cacheElementsTicketImport[type] = await chargerElementsParTypePourAssociation(type);
     }
+    indexElementsTicketImport = construireIndexElementsAssociation(cacheElementsTicketImport);
+  } else if (!indexElementsTicketImport) {
+    indexElementsTicketImport = construireIndexElementsAssociation(cacheElementsTicketImport);
   }
+
+  const trouveIndex = indexElementsTicketImport.get(recherche);
+
+  if (trouveIndex) {
+    ajouterLog(`Recherche element ${nomElement} : trouve ${trouveIndex.itemtype} #${trouveIndex.id}`);
+    return trouveIndex;
+  }
+
+  ajouterLog(`Recherche element ${nomElement} : non trouve`);
+  return null;
 
   for (const type of TYPES_ELEMENTS_VALIDES) {
     const elements = cacheElementsTicketImport[type] || [];
@@ -991,10 +1152,10 @@ export async function importerElementsCsv(donnees, ajouterLog) {
 
   for (const ligne of donnees) {
     ajouterLog('Import élément démarré');
-    const nom = normaliserTexteCsv(ligne.Name);
-    const itemTypeBrut = normaliserTexteCsv(ligne.Item_Type);
+    const nom = normaliserTexteCsv(valeurColonneCsv(ligne, 'name'));
+    const itemTypeBrut = normaliserTexteCsv(valeurColonneCsv(ligne, 'item_type'));
     const itemType = normaliserItemType(itemTypeBrut);
-    const numeroInventaire = normaliserTexteCsv(ligne.Inventory_Number);
+    const numeroInventaire = normaliserTexteCsv(valeurColonneCsv(ligne, 'inventory_number'));
 
     if (!estValide(nom)) {
       ajouterLog('Ligne ignorée : Name vide');
@@ -1027,13 +1188,13 @@ export async function importerElementsCsv(donnees, ajouterLog) {
 
     try {
       const commentaireImport = construireCommentaireImportElement(ligne);
-      const etatGlpi = await recupererOuCreerEtatGlpi(ligne.Status, ajouterLog);
-      const localisationGlpi = await recupererOuCreerLocalisationGlpi(ligne.Location, ajouterLog);
-      const fabricantGlpi = await recupererOuCreerFabricantGlpi(ligne.Manufacturer, ajouterLog);
-      const modeleGlpi = await recupererOuCreerModeleGlpi(itemType, ligne.Model, fabricantGlpi, ajouterLog);
+      const etatGlpi = await recupererOuCreerEtatGlpi(valeurColonneCsv(ligne, 'status'), ajouterLog);
+      const localisationGlpi = await recupererOuCreerLocalisationGlpi(valeurColonneCsv(ligne, 'location'), ajouterLog);
+      const fabricantGlpi = await recupererOuCreerFabricantGlpi(valeurColonneCsv(ligne, 'manufacturer'), ajouterLog);
+      const modeleGlpi = await recupererOuCreerModeleGlpi(itemType, valeurColonneCsv(ligne, 'model'), fabricantGlpi, ajouterLog);
 
       let utilisateurGlpi = null;
-      const nomUtilisateur = normaliserTexteCsv(ligne.User);
+      const nomUtilisateur = normaliserTexteCsv(valeurColonneCsv(ligne, 'user'));
       if (!estValide(nomUtilisateur)) {
         ajouterLog('User vide : asset créé sans utilisateur');
       } else {
@@ -1132,14 +1293,20 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 
   correspondancesTicketsImportes.clear();
   cacheElementsTicketImport = null;
+  indexElementsTicketImport = null;
 
-  const ticketsExistants = await chargerTousLesTickets();
+  const [ticketsExistants, coutsExistants] = await Promise.all([
+    chargerTousLesTickets(),
+    chargerTousLesCoutsTicket(),
+  ]);
+  const indexCoutsTickets = construireIndexCoutsTickets(coutsExistants);
+  const indexDoublonsTickets = construireIndexDoublonsTickets(ticketsExistants);
 
   for (const ligne of donnees) {
-    const refTicket = (ligne.Ref_Ticket || '').trim();
-    const titre = (ligne.Titre || '').trim();
-    const description = (ligne.Description || '').trim();
-    const itemsColonne = String(ligne.Items ?? '').trim();
+    const refTicket = String(valeurColonneCsv(ligne, 'ref_ticket') || '').trim();
+    const titre = String(valeurColonneCsv(ligne, 'titre') || '').trim();
+    const description = String(valeurColonneCsv(ligne, 'description') || '').trim();
+    const itemsColonne = String(valeurColonneCsv(ligne, 'items') ?? '').trim();
     const { dateGLPI, avertissement: avertissementDate } = construireDateTicketDepuisCsv(ligne);
 
     if (!estValide(titre)) {
@@ -1157,7 +1324,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       ajouterLog(`Date CSV détectée pour ticket Ref ${refTicket || titre} : ${dateGLPI}`);
     }
 
-    const doublon = trouverDoublonTicket(ticketsExistants, refTicket, titre);
+    const doublon = trouverDoublonTicket(indexDoublonsTickets, refTicket, titre);
     if (doublon) {
       const avert = `Doublon ignoré : ticket "${titre}"${refTicket ? ` (Ref: ${refTicket})` : ''} — id ${doublon.id}`;
       ajouterLog(avert);
@@ -1178,10 +1345,10 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       const corpsTicket = {
         name: titre,
         content: contenu,
-        type: convertirTypeTicket(ligne.Type),
-        urgency: convertirPrioriteTicket(ligne.Priority),
-        priority: convertirPrioriteTicket(ligne.Priority),
-        status: convertirStatutTicket(ligne.Status),
+        type: convertirTypeTicket(valeurColonneCsv(ligne, 'type')),
+        urgency: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
+        priority: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
+        status: convertirStatutTicket(valeurColonneCsv(ligne, 'status')),
         entities_id: 0,
       };
 
@@ -1201,7 +1368,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       }
 
       // Mémoriser localement pour la détection de doublons des lignes suivantes
-      ticketsExistants.push({ id: idTicket, name: titre, content: contenu });
+      ajouterTicketDansIndexDoublons(indexDoublonsTickets, { id: idTicket, name: titre, content: contenu });
 
       // Créer les relations Item_Ticket si la colonne Items est renseignée
       if (estValide(itemsColonne) && idTicket) {
@@ -1223,6 +1390,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
         ajouterLog(`Ticket ${titre} : ${nomsElementsUniques.length} éléments uniques après suppression des doublons`);
 
         const relationsExistantes = await recupererRelationsTicketExistantes(idTicket);
+        const indexRelationsExistantes = construireIndexRelationsTicket(relationsExistantes);
 
         for (const nomElement of nomsElementsUniques) {
           ajouterLog(`Recherche élément : ${nomElement}`);
@@ -1238,7 +1406,9 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
 
           ajouterLog(`Élément trouvé : ${element.itemtype} #${element.id}`);
 
-          if (relationItemTicketDejaExistante(relationsExistantes, element)) {
+          const cleRelation = normaliserCleRelation(element.itemtype, element.id);
+
+          if (indexRelationsExistantes.has(cleRelation)) {
             ajouterLog(`POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : relation déjà existante`);
             ajouterLog(`Relation déjà existante : Ticket #${idTicket} → ${element.itemtype} #${element.id}`);
             resultat.associationsDejaExistantes++;
@@ -1258,7 +1428,7 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
             ajouterLog(`Relation créée : ${refTicket || idTicket} → ${nomElement}`);
             resultat.associationsCreees++;
             resultat.associations++;
-            relationsExistantes.push({ itemtype: element.itemtype, items_id: element.id });
+            indexRelationsExistantes.add(cleRelation);
           } catch (erreurAssoc) {
             const avert = `POST Item_Ticket Ticket #${idTicket} → ${element.itemtype} #${element.id} : ${formaterErreurApiComplete(erreurAssoc)}`;
             ajouterLog(avert);
@@ -1287,7 +1457,7 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
   const ticketsExistants = await chargerTousLesTickets();
 
   for (const ligne of donnees) {
-    const numTicket = String(ligne.Num_Ticket ?? '').trim();
+    const numTicket = String(valeurColonneCsv(ligne, 'num_ticket') ?? '').trim();
 
     if (!estValide(numTicket)) {
       ajouterLog('Ligne coût ignorée : Num_Ticket manquant');
@@ -1320,9 +1490,18 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
 
     try {
       // Convertir toutes les valeurs numériques — jamais null ni NaN envoyé à GLPI
-      const valeurActiontime = convertirNombreCsv(ligne.Duration_second, 0);
-      const valeurCoutTemps = convertirNombreCsv(ligne.Time_Cost, 0);
-      const valeurCoutFixe = convertirNombreCsv(ligne.Fixed_Cost, 0);
+      const valeurActiontime = convertirNombreCsv(valeurColonneCsv(ligne, 'duration_second'), 0);
+      const valeurCoutTemps = convertirNombreCsv(valeurColonneCsv(ligne, 'time_cost'), 0);
+      const valeurCoutFixe = convertirNombreCsv(valeurColonneCsv(ligne, 'fixed_cost'), 0);
+      const cleCout = construireCleCoutTicket(ticket.id, numTicket, valeurActiontime, valeurCoutTemps, valeurCoutFixe);
+
+      if (indexCoutsTickets.has(cleCout)) {
+        const avert = `Cout Ref ${numTicket} : TicketCost deja existant pour le ticket #${ticket.id}, cout ignore`;
+        ajouterLog(avert);
+        resultat.avertissements.push(avert);
+        resultat.coutsIgnores++;
+        continue;
+      }
 
       ajouterLog(`Coût ${numTicket} : actiontime=${valeurActiontime}, cost_time=${valeurCoutTemps}, cost_fixed=${valeurCoutFixe}`);
 
@@ -1336,6 +1515,7 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
       };
 
       await clientGlpiLegacy.post('/TicketCost', { input: corpsCout });
+      indexCoutsTickets.add(cleCout);
       ajouterLog(`TicketCost créé pour ${numTicket}`);
       resultat.importes++;
     } catch (erreurApi) {
