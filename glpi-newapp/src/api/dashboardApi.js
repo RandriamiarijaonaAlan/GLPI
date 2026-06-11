@@ -146,7 +146,7 @@ function calculerStatistiques(tickets, groupesElements) {
 
 async function recupererStatistiquesDashboardLegacy() {
   const [tickets, ...groupesElements] = await Promise.all([
-    recupererListe('/Ticket?range=0-999&expand_dropdowns=true'),
+    recupererListe('/Ticket?range=0-9999&expand_dropdowns=true'),
     ...cheminsElements.map(([, chemin]) => recupererListe(chemin).catch(() => [])),
   ]);
   return calculerStatistiques(tickets.filter(ticketEstVisible), groupesElements);
@@ -154,7 +154,7 @@ async function recupererStatistiquesDashboardLegacy() {
 
 async function recupererStatistiquesDashboardV2() {
   const [tickets, ...groupesElements] = await Promise.all([
-    recupererListeV2('/Assistance/Ticket?limit=1000'),
+    recupererListeV2('/Assistance/Ticket?limit=9000'),
     ...cheminsElements.map(([, , cheminV2]) => recupererListeV2(cheminV2).catch(() => [])),
   ]);
   return calculerStatistiques(tickets.filter(ticketEstVisible), groupesElements);
@@ -162,10 +162,10 @@ async function recupererStatistiquesDashboardV2() {
 
 async function recupererIdsTicketsVisiblesDashboard() {
   try {
-    const tickets = await recupererListeV2('/Assistance/Ticket?limit=1000');
+    const tickets = await recupererListeV2('/Assistance/Ticket?limit=9000');
     return new Set(tickets.filter(ticketEstVisible).map((ticket) => String(ticket.id)));
   } catch {
-    const tickets = await recupererListe('/Ticket?range=0-999&expand_dropdowns=true');
+    const tickets = await recupererListe('/Ticket?range=0-9999&expand_dropdowns=true');
     return new Set(tickets.filter(ticketEstVisible).map((ticket) => String(ticket.id)));
   }
 }

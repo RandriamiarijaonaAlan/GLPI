@@ -86,13 +86,13 @@ function creerCorpsTicket(donneesTicket) {
 }
 
 async function recupererTicketsLegacy() {
-  const reponse = await clientGlpiLegacy.get('/Ticket?range=0-99&expand_dropdowns=true');
+  const reponse = await clientGlpiLegacy.get('/Ticket?range=0-9999&expand_dropdowns=true');
 
   return normaliserListeTickets(reponse.data).filter(ticketEstVisible);
 }
 
 async function recupererTicketsV2() {
-  const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=1000');
+  const reponse = await clientGlpiV2.get('/Assistance/Ticket?limit=9000');
 
   return normaliserListeTickets(reponse.data).filter(ticketEstVisible);
 }
