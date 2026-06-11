@@ -6,6 +6,7 @@ const liensBackoffice = [
   ['Tickets', '/admin/tickets'],
   ['Import fichiers', '/admin/import'],
   ['RÃ©initialisation', '/admin/reset'],
+  ['Kanban Config', '/admin/kanban-config'],
   ['FrontOffice Ã©lÃ©ments', '/front/elements'],
   ['CrÃ©er ticket FrontOffice', '/front/create-ticket'],
 ];

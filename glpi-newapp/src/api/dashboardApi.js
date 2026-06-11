@@ -94,6 +94,17 @@ function convertirNombreGlpi(valeur) {
   return Number.isNaN(nombre) ? 0 : nombre;
 }
 
+function calculerCoutTemps(actiontime, costTime) {
+  const dureeSecondes = convertirNombreGlpi(actiontime);
+  const tauxTemps = convertirNombreGlpi(costTime);
+
+  if (dureeSecondes <= 0 || tauxTemps <= 0) {
+    return 0;
+  }
+
+  return (dureeSecondes / 3600) * tauxTemps;
+}
+
 async function recupererListe(endpoint) {
   const reponse = await clientGlpiLegacy.get(endpoint);
   return normaliserListe(reponse.data);
@@ -166,7 +177,7 @@ async function recupererCoutsDashboard(idsTicketsVisibles) {
     return couts.reduce(
       (acc, cout) => {
         acc.dureeSecondes += convertirNombreGlpi(cout.actiontime);
-        acc.coutTemps += convertirNombreGlpi(cout.cost_time);
+        acc.coutTemps += calculerCoutTemps(cout.actiontime, cout.cost_time);
         acc.coutFixe += convertirNombreGlpi(cout.cost_fixed);
         acc.nombreCouts += 1;
         return acc;

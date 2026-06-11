@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   recupererModulesDisponibles,
   reinitialiserToutesLesDonneesMetier,
@@ -15,12 +15,36 @@ export default function ReinitialisationDonnees() {
   const [chargementAnalyse, definirChargementAnalyse] = useState(false);
   const [chargementReinitialisation, definirChargementReinitialisation] = useState(false);
   const [erreur, definirErreur] = useState('');
+  const fileLogs = useRef([]);
+  const minuterieLogs = useRef(null);
 
   function ajouterLog(message) {
-    definirJournal((journalCourant) => [
-      ...journalCourant,
-      `${new Date().toLocaleTimeString('fr-FR')} - ${message}`,
-    ]);
+    fileLogs.current.push(`${new Date().toLocaleTimeString('fr-FR')} - ${message}`);
+
+    if (minuterieLogs.current) {
+      return;
+    }
+
+    minuterieLogs.current = setTimeout(() => {
+      const messages = fileLogs.current;
+      fileLogs.current = [];
+      minuterieLogs.current = null;
+      definirJournal((journalCourant) => [...journalCourant, ...messages]);
+    }, 120);
+  }
+
+  function viderFileLogs() {
+    if (minuterieLogs.current) {
+      clearTimeout(minuterieLogs.current);
+      minuterieLogs.current = null;
+    }
+
+    const messages = fileLogs.current;
+    fileLogs.current = [];
+
+    if (messages.length > 0) {
+      definirJournal((journalCourant) => [...journalCourant, ...messages]);
+    }
   }
 
   async function analyserDonnees() {
@@ -42,6 +66,7 @@ export default function ReinitialisationDonnees() {
       definirErreur(message);
       ajouterLog(message);
     } finally {
+      viderFileLogs();
       definirChargementAnalyse(false);
     }
   }
@@ -71,6 +96,7 @@ export default function ReinitialisationDonnees() {
       definirErreur(message);
       ajouterLog(message);
     } finally {
+      viderFileLogs();
       definirChargementReinitialisation(false);
     }
   }
