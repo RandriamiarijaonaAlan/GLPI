@@ -1,0 +1,10 @@
+
+
+ETU3341
+
+lorsque en deplace dans le kanban vers termine y a boite dialogue et en ajoute un nouveau cout et en le garde en sql lite avec un nouveau colonne cout fixe 
+en cree une nouvelle page cout et on y trouve l item nouveau et l ancien cout de l import ,cout total total si y a beaucoup il se partage le prix 
+
+
+
+Get-childItem C:\Users\ACER NITRO\Music\GLPI>  -Recurse -File | Where-Object {$_.LastWriteTime -gt (Get-Date).AddMinutes(-30)} | Sort-Object LastWriteTime -Descending | Select-Object LastWriteTime,Fullname

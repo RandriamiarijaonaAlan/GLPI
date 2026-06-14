@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { recupererDetailTicketKanban } from "../../api/kanbanApi";
+import { recupererConfigurationKanbanSqlite } from "../../api/kanbanConfigApi";
 import {
-  chargerConfigurationKanban,
   convertirColonneKanbanVersStatutGlpi,
   grouperTicketsParStatutKanban,
+  obtenirConfigurationKanbanParDefaut,
 } from "../../utils/kanban";
 import {
   recupererTicketsKanban,
   modifierStatutTicketKanban,
 } from "../../api/kanbanApi";
+import { creerCoutKanbanSqlite } from "../../api/kanbanCostsApi";
 
 export default function KanbanTickets() {
   const navigate = useNavigate();
@@ -20,7 +22,13 @@ export default function KanbanTickets() {
   const [ticketGlisse, setTicketGlisse] = useState(null);
   const [ticketDetail, setTicketDetail] = useState(null);
   const [detailTicket, setDetailTicket] = useState(null);
-const [chargementDetail, setChargementDetail] = useState(false);
+  const [chargementDetail, setChargementDetail] = useState(false);
+  const [dialogueCout, setDialogueCout] = useState(null);
+  const [formulaireCout, setFormulaireCout] = useState({
+    coutFixe: "",
+    commentaire: "Cout ajoute depuis Kanban",
+  });
+  const [soumissionCout, setSoumissionCout] = useState(false);
 
 async function ouvrirDetailTicket(idTicket) {
   try {
@@ -44,7 +52,13 @@ async function ouvrirDetailTicket(idTicket) {
       setChargement(true);
       setErreur("");
 
-      setConfiguration(chargerConfigurationKanban());
+      try {
+        const configurationSqlite = await recupererConfigurationKanbanSqlite();
+        setConfiguration(configurationSqlite);
+      } catch (erreurConfiguration) {
+        console.error(erreurConfiguration);
+        setConfiguration(obtenirConfigurationKanbanParDefaut());
+      }
 
       const donneesTickets = await recupererTicketsKanban();
       setTickets(Array.isArray(donneesTickets) ? donneesTickets : donneesTickets.data || []);
@@ -74,11 +88,12 @@ async function ouvrirDetailTicket(idTicket) {
     const statutGlpi = convertirColonneKanbanVersStatutGlpi(codeColonne);
 
     if (codeColonne === "termine") {
-      const confirmation = confirm("Confirmer le passage du ticket en Terminé ?");
-      if (!confirmation) {
-        setTicketGlisse(null);
-        return;
-      }
+      setDialogueCout({ ticket: ticketGlisse, codeColonne, statutGlpi });
+      setFormulaireCout({
+        coutFixe: "",
+        commentaire: "Cout ajoute depuis Kanban",
+      });
+      return;
     }
 
     try {
@@ -90,6 +105,53 @@ async function ouvrirDetailTicket(idTicket) {
       alert("Erreur lors du changement de statut.");
       setTicketGlisse(null);
     }
+  }
+
+  async function validerCoutTermine(evenement) {
+    evenement.preventDefault();
+
+    if (!dialogueCout) return;
+
+    const coutFixe = Number(String(formulaireCout.coutFixe).trim().replace(",", "."));
+
+    if (Number.isNaN(coutFixe) || coutFixe < 0) {
+      alert("Cout fixe invalide.");
+      return;
+    }
+
+    setSoumissionCout(true);
+
+    try {
+      const detail = await recupererDetailTicketKanban(dialogueCout.ticket.id);
+      const nombreItems = Math.max(1, detail.elementsLies?.length || 0);
+
+      await modifierStatutTicketKanban(dialogueCout.ticket.id, dialogueCout.statutGlpi);
+
+      if (coutFixe > 0) {
+        await creerCoutKanbanSqlite({
+          ticketId: dialogueCout.ticket.id,
+          coutFixe,
+          commentaire: formulaireCout.commentaire,
+          nombreItems,
+          items: detail.elementsLies || [],
+        });
+      }
+
+      setDialogueCout(null);
+      setTicketGlisse(null);
+      await chargerDonnees();
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de l'enregistrement du cout.");
+    } finally {
+      setSoumissionCout(false);
+    }
+  }
+
+  function annulerCoutTermine() {
+    if (soumissionCout) return;
+    setDialogueCout(null);
+    setTicketGlisse(null);
   }
 
   const ticketsGroupes = grouperTicketsParStatutKanban(tickets);
@@ -197,6 +259,54 @@ async function ouvrirDetailTicket(idTicket) {
     </div>
   </div>
 )}
+
+      {dialogueCout && (
+        <div style={styles.modalFond} onClick={annulerCoutTermine}>
+          <form style={styles.modal} onSubmit={validerCoutTermine} onClick={(e) => e.stopPropagation()}>
+            <h2>Passer le ticket en Termine</h2>
+            <p>Ticket #{dialogueCout.ticket.id}</p>
+
+            <label style={styles.champModal}>
+              Cout fixe
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formulaireCout.coutFixe}
+                onChange={(e) =>
+                  setFormulaireCout((courant) => ({
+                    ...courant,
+                    coutFixe: e.target.value,
+                  }))
+                }
+                required
+              />
+            </label>
+
+            <label style={styles.champModal}>
+              Commentaire
+              <textarea
+                value={formulaireCout.commentaire}
+                onChange={(e) =>
+                  setFormulaireCout((courant) => ({
+                    ...courant,
+                    commentaire: e.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <div style={styles.actionsModal}>
+              <button type="submit" style={styles.bouton} disabled={soumissionCout}>
+                {soumissionCout ? "Enregistrement..." : "Valider"}
+              </button>
+              <button type="button" style={styles.boutonSecondaire} onClick={annulerCoutTermine} disabled={soumissionCout}>
+                Annuler
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -270,5 +380,16 @@ const styles = {
     background: "#fff",
     padding: "24px",
     borderRadius: "12px",
+  },
+  champModal: {
+    display: "grid",
+    gap: "8px",
+    marginBottom: "14px",
+    fontWeight: 700,
+  },
+  actionsModal: {
+    display: "flex",
+    gap: "10px",
+    justifyContent: "flex-end",
   },
 };
