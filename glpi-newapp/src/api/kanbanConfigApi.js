@@ -33,3 +33,8 @@ export async function reinitialiserConfigurationKanbanSqlite() {
   const reponse = await clientKanban.post("/kanban/config/reset");
   return reponse.data;
 }
+
+export async function reinitialiserDonneesKanbanSqlite() {
+  const reponse = await clientKanban.post("/kanban/data/reset");
+  return reponse.data;
+}

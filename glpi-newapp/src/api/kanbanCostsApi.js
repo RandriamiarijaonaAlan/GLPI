@@ -24,3 +24,16 @@ export async function creerCoutKanbanSqlite(donnees) {
 
   return reponse.data;
 }
+
+export async function supprimerDernierCoutKanbanSqlite(ticketId) {
+  const reponse = await clientKanbanCosts.delete(`/kanban/costs/latest/${ticketId}`);
+  return reponse.data;
+}
+
+export async function reouvrirDernierCoutKanbanSqlite(ticketId, pourcentage) {
+  const reponse = await clientKanbanCosts.patch(`/kanban/costs/latest/${ticketId}/reopen`, {
+    pourcentage,
+  });
+
+  return reponse.data;
+}

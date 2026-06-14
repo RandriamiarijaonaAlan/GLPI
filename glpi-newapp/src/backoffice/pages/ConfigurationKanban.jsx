@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   recupererConfigurationKanbanSqlite,
+  reinitialiserDonneesKanbanSqlite,
   sauvegarderConfigurationKanbanSqlite,
   reinitialiserConfigurationKanbanSqlite,
 } from "../../api/kanbanConfigApi";
@@ -9,6 +10,7 @@ export default function ConfigurationKanban() {
   const [configuration, setConfiguration] = useState([]);
   const [messageSucces, setMessageSucces] = useState("");
   const [messageErreur, setMessageErreur] = useState("");
+  const [chargementResetDonnees, setChargementResetDonnees] = useState(false);
 
  useEffect(() => {
   async function chargerConfiguration() {
@@ -61,6 +63,38 @@ export default function ConfigurationKanban() {
   setConfiguration(donnees);
 
   setMessageSucces("Configuration Kanban réinitialisée.");
+}
+
+  async function reinitialiserDonneesKanban() {
+  const confirmation = confirm(
+    "Reinitialiser les donnees Kanban ? Les couts Kanban SQLite seront supprimes et la configuration sera remise par defaut.",
+  );
+
+  if (!confirmation) return;
+
+  setChargementResetDonnees(true);
+  setMessageErreur("");
+
+  try {
+    const resultat = await reinitialiserDonneesKanbanSqlite();
+    const donnees = await recupererConfigurationKanbanSqlite();
+    setConfiguration(donnees);
+    setMessageSucces(
+      `Donnees Kanban reinitialisees. Couts supprimes : ${resultat.couts_supprimes || 0}.`,
+    );
+  } catch (erreur) {
+    console.error(erreur);
+    const statut = erreur.response?.status;
+    const detail = erreur.response?.data?.message || erreur.message || "";
+    setMessageErreur(
+      statut === 404
+        ? "Route de reset Kanban introuvable. Redemarrez le backend SQLite sur le port 3001."
+        : `Erreur lors de la reinitialisation des donnees Kanban.${detail ? ` ${detail}` : ""}`,
+    );
+    setMessageSucces("");
+  } finally {
+    setChargementResetDonnees(false);
+  }
 }
 
   return (
@@ -137,6 +171,15 @@ export default function ConfigurationKanban() {
           Réinitialiser
         </button>
       </div>
+      <div style={styles.actions}>
+        <button
+          onClick={reinitialiserDonneesKanban}
+          style={styles.boutonDanger}
+          disabled={chargementResetDonnees}
+        >
+          {chargementResetDonnees ? "Reinitialisation..." : "Reset donnees Kanban"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -199,6 +242,14 @@ const styles = {
     border: "1px solid #d1d5db",
     borderRadius: "8px",
     background: "#ffffff",
+    cursor: "pointer",
+  },
+  boutonDanger: {
+    padding: "10px 18px",
+    border: "none",
+    borderRadius: "8px",
+    background: "#dc2626",
+    color: "#ffffff",
     cursor: "pointer",
   },
   messageSucces: {
