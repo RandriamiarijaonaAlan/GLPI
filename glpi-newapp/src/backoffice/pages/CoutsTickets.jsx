@@ -127,6 +127,7 @@ export default function CoutsTickets() {
   const [nouveauxCouts, setNouveauxCouts] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreurs, setErreurs] = useState([]);
+  const [typeSelectionne, setTypeSelectionne] = useState(null);
 
   async function chargerCouts() {
     setChargement(true);
@@ -184,14 +185,18 @@ export default function CoutsTickets() {
 
     function garantirLigne(type) {
       if (!lignes.has(type)) {
-        lignes.set(type, {
-          type,
-          coutImport: 0,
-          coutManuel: 0,
-        });
+        lignes.set(type, { type, coutImport: 0, coutManuel: 0, items: new Map() });
       }
-
       return lignes.get(type);
+    }
+
+    function ajouterItemALigne(ligne, nom, coutImport, coutManuel) {
+      if (!ligne.items.has(nom)) {
+        ligne.items.set(nom, { nom, coutImport: 0, coutManuel: 0 });
+      }
+      const item = ligne.items.get(nom);
+      item.coutImport += coutImport;
+      item.coutManuel += coutManuel;
     }
 
     anciensCouts.forEach((cout) => {
@@ -199,13 +204,17 @@ export default function CoutsTickets() {
       const total = calculerCoutAncien(cout);
 
       if (items.length === 0) {
-        garantirLigne("Materiel").coutImport += total;
+        const ligne = garantirLigne("Materiel");
+        ligne.coutImport += total;
+        ajouterItemALigne(ligne, "Inconnu", total, 0);
         return;
       }
 
       const coutParAsset = total / items.length;
       items.forEach((item) => {
-        garantirLigne(afficherTypeItem(item)).coutImport += coutParAsset;
+        const ligne = garantirLigne(afficherTypeItem(item));
+        ligne.coutImport += coutParAsset;
+        ajouterItemALigne(ligne, item.nom || "Inconnu", coutParAsset, 0);
       });
     });
 
@@ -214,17 +223,28 @@ export default function CoutsTickets() {
       const total = convertirNombre(cout.cout_fixe);
 
       if (items.length === 0) {
-        garantirLigne("Materiel").coutManuel += total;
+        const ligne = garantirLigne("Materiel");
+        ligne.coutManuel += total;
+        ajouterItemALigne(ligne, "Inconnu", 0, total);
         return;
       }
 
       const coutParAsset = total / items.length;
       items.forEach((item) => {
-        garantirLigne(afficherTypeItem(item)).coutManuel += coutParAsset;
+        const ligne = garantirLigne(afficherTypeItem(item));
+        ligne.coutManuel += coutParAsset;
+        ajouterItemALigne(ligne, item.nom || "Inconnu", 0, coutParAsset);
       });
     });
 
-    return Array.from(lignes.values()).sort((a, b) => a.type.localeCompare(b.type));
+    return Array.from(lignes.values())
+      .map((ligne) => ({
+        ...ligne,
+        items: Array.from(ligne.items.values()).sort(
+          (a, b) => (b.coutImport + b.coutManuel) - (a.coutImport + a.coutManuel)
+        ),
+      }))
+      .sort((a, b) => a.type.localeCompare(b.type));
   }, [anciensCouts, nouveauxCouts]);
 
   return (
@@ -278,16 +298,52 @@ export default function CoutsTickets() {
                   </tr>
                 </thead>
                 <tbody>
-                  {coutsParMateriel.map((ligne) => (
-                    <tr key={ligne.type}>
-                      <td style={stylesCoutsMateriel.tdType}>{ligne.type}</td>
-                      <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutImport)}</td>
-                      <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutManuel)}</td>
-                      <td style={stylesCoutsMateriel.td}>
-                        {formaterMontant(ligne.coutImport + ligne.coutManuel)}
-                      </td>
-                    </tr>
-                  ))}
+                  {coutsParMateriel.flatMap((ligne) => {
+                    const ouvert = typeSelectionne === ligne.type;
+                    const rangees = [
+                      <tr key={ligne.type}>
+                        <td
+                          style={{ ...stylesCoutsMateriel.tdType, cursor: 'pointer', userSelect: 'none' }}
+                          onClick={() => setTypeSelectionne(ouvert ? null : ligne.type)}
+                          title="Cliquer pour voir le détail"
+                        >
+                          {ligne.type} {ouvert ? '▲' : '▼'}
+                        </td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutImport)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutManuel)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutImport + ligne.coutManuel)}</td>
+                      </tr>,
+                    ];
+                    if (ouvert) {
+                      rangees.push(
+                        <tr key={`${ligne.type}-detail`}>
+                          <td colSpan={4} style={{ padding: 0 }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ ...stylesCoutsMateriel.th, paddingLeft: '32px', fontSize: '11px' }}>Item</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Cout import</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Cout manuel</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Total</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ligne.items.map((item) => (
+                                  <tr key={item.nom}>
+                                    <td style={{ ...stylesCoutsMateriel.td, paddingLeft: '32px', color: '#a5b4fc', fontSize: '13px' }}>{item.nom}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutImport)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutManuel)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutImport + item.coutManuel)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return rangees;
+                  })}
                   <tr>
                     <td style={stylesCoutsMateriel.totalLabel}>Total</td>
                     <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalAncien)}</td>

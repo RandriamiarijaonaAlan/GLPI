@@ -2,6 +2,7 @@
 const COLONNES_ASSET = ['name', 'status', 'location', 'manufacturer', 'item_type', 'model', 'inventory_number', 'user'];
 const COLONNES_TICKET = ['ref_ticket', 'date', 'heure', 'type', 'titre', 'description', 'status', 'priority', 'items'];
 const COLONNES_COUT = ['num_ticket', 'duration_second', 'time_cost', 'fixed_cost'];
+const COLONNES_MVT = ['ticket', 'mvt', 'valeur'];
 
 // Retourne true si le texte contient des séquences typiques de double-encodage UTF-8/Latin-1
 // (ex : "Ã©" au lieu de "é", "Ã " au lieu de "à")
@@ -134,13 +135,18 @@ function calculerScore(colonnesCsv, colonnesAttendues) {
 }
 
 // Détecte automatiquement le type des données CSV selon ses colonnes
-// Retourne : 'ASSET', 'TICKET', 'COUT' ou 'INCONNU'
+// Retourne : 'ASSET', 'TICKET', 'COUT', 'MVT' ou 'INCONNU'
 export function detecterTypeCsv(donnees) {
   if (!donnees || donnees.length === 0) {
     return 'INCONNU';
   }
 
   const colonnesCsv = Object.keys(donnees[0]);
+
+  // MVT : correspondance exacte sur les 3 colonnes obligatoires
+  if (calculerScore(colonnesCsv, COLONNES_MVT) === COLONNES_MVT.length) {
+    return 'MVT';
+  }
 
   const scoreAsset = calculerScore(colonnesCsv, COLONNES_ASSET);
   const scoreTicket = calculerScore(colonnesCsv, COLONNES_TICKET);
