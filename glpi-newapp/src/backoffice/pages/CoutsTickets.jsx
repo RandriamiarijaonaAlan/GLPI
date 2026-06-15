@@ -29,6 +29,48 @@ function calculerCoutAncien(cout) {
   return fixe + (dureeSecondes / 3600) * tauxTemps;
 }
 
+function construireTotauxGlpiParTicket(anciensCouts) {
+  const totaux = new Map();
+
+  anciensCouts.forEach((cout) => {
+    const ticketId = String(lireIdTicket(cout.tickets_id));
+    if (!ticketId || ticketId === "-") return;
+    totaux.set(ticketId, (totaux.get(ticketId) || 0) + calculerCoutAncien(cout));
+  });
+
+  return totaux;
+}
+
+function extrairePourcentageReouverture(commentaire) {
+  const texte = String(commentaire || "");
+  const correspondance = texte.match(/Reouverture\s*\+([0-9]+(?:[.,][0-9]+)?)%/i);
+  return correspondance ? convertirNombre(correspondance[1]) : null;
+}
+
+function calculerVentilationCoutKanban(cout, totauxGlpiParTicket) {
+  const total = convertirNombre(cout.cout_fixe);
+  const commentaire = String(cout.commentaire || "");
+  const commentaireMin = commentaire.toLowerCase();
+
+  if (commentaireMin.includes("import reouverture")) {
+    return { supercost: 0, reouverture: total };
+  }
+
+  // Ancien format cree avant correction : cout_fixe contenait le pourcentage open.
+  if (commentaireMin.trim() === "import open") {
+    const totalGlpi = totauxGlpiParTicket.get(String(cout.ticket_id)) || 0;
+    return { supercost: 0, reouverture: (totalGlpi * total) / 100 };
+  }
+
+  const pourcentage = extrairePourcentageReouverture(commentaire);
+  if (pourcentage !== null) {
+    const supercost = total / (1 + pourcentage / 100);
+    return { supercost, reouverture: total - supercost };
+  }
+
+  return { supercost: total, reouverture: 0 };
+}
+
 function lireItemsCout(cout) {
   try {
     const items = JSON.parse(cout.items_json || "[]");
@@ -167,36 +209,42 @@ export default function CoutsTickets() {
   }, []);
 
   const totaux = useMemo(() => {
-    const totalAncien = anciensCouts.reduce((total, cout) => total + calculerCoutAncien(cout), 0);
-    const totalNouveau = nouveauxCouts.reduce(
-      (total, cout) => total + convertirNombre(cout.cout_fixe),
-      0,
-    );
+    const totauxGlpiParTicket = construireTotauxGlpiParTicket(anciensCouts);
+    const totalGlpi = anciensCouts.reduce((total, cout) => total + calculerCoutAncien(cout), 0);
+    const totalNouveau = nouveauxCouts.reduce((acc, cout) => {
+      const ventilation = calculerVentilationCoutKanban(cout, totauxGlpiParTicket);
+      acc.reouverture += ventilation.reouverture;
+      acc.supercost += ventilation.supercost;
+      return acc;
+    }, { reouverture: 0, supercost: 0 });
 
     return {
-      totalAncien,
-      totalNouveau,
-      totalGeneral: totalAncien + totalNouveau,
+      totalGlpi,
+      totalReouverture: totalNouveau.reouverture,
+      totalSupercost: totalNouveau.supercost,
+      totalGeneral: totalGlpi + totalNouveau.reouverture + totalNouveau.supercost,
     };
   }, [anciensCouts, nouveauxCouts]);
 
   const coutsParMateriel = useMemo(() => {
     const lignes = new Map();
+    const totauxGlpiParTicket = construireTotauxGlpiParTicket(anciensCouts);
 
     function garantirLigne(type) {
       if (!lignes.has(type)) {
-        lignes.set(type, { type, coutImport: 0, coutManuel: 0, items: new Map() });
+        lignes.set(type, { type, glpi: 0, reouverture: 0, supercost: 0, items: new Map() });
       }
       return lignes.get(type);
     }
 
-    function ajouterItemALigne(ligne, nom, coutImport, coutManuel) {
+    function ajouterItemALigne(ligne, nom, glpi, reouverture, supercost) {
       if (!ligne.items.has(nom)) {
-        ligne.items.set(nom, { nom, coutImport: 0, coutManuel: 0 });
+        ligne.items.set(nom, { nom, glpi: 0, reouverture: 0, supercost: 0 });
       }
       const item = ligne.items.get(nom);
-      item.coutImport += coutImport;
-      item.coutManuel += coutManuel;
+      item.glpi += glpi;
+      item.reouverture += reouverture;
+      item.supercost += supercost;
     }
 
     anciensCouts.forEach((cout) => {
@@ -205,35 +253,43 @@ export default function CoutsTickets() {
 
       if (items.length === 0) {
         const ligne = garantirLigne("Materiel");
-        ligne.coutImport += total;
-        ajouterItemALigne(ligne, "Inconnu", total, 0);
+        ligne.glpi += total;
+        ajouterItemALigne(ligne, "Inconnu", total, 0, 0);
         return;
       }
 
       const coutParAsset = total / items.length;
       items.forEach((item) => {
         const ligne = garantirLigne(afficherTypeItem(item));
-        ligne.coutImport += coutParAsset;
-        ajouterItemALigne(ligne, item.nom || "Inconnu", coutParAsset, 0);
+        ligne.glpi += coutParAsset;
+        ajouterItemALigne(ligne, item.nom || "Inconnu", coutParAsset, 0, 0);
       });
     });
 
     nouveauxCouts.forEach((cout) => {
       const items = lireItemsCout(cout);
-      const total = convertirNombre(cout.cout_fixe);
+      const ventilation = calculerVentilationCoutKanban(cout, totauxGlpiParTicket);
+      const totalVentile = ventilation.reouverture + ventilation.supercost;
 
-      if (items.length === 0) {
-        const ligne = garantirLigne("Materiel");
-        ligne.coutManuel += total;
-        ajouterItemALigne(ligne, "Inconnu", 0, total);
+      if (totalVentile === 0) {
         return;
       }
 
-      const coutParAsset = total / items.length;
+      if (items.length === 0) {
+        const ligne = garantirLigne("Materiel");
+        ligne.reouverture += ventilation.reouverture;
+        ligne.supercost += ventilation.supercost;
+        ajouterItemALigne(ligne, "Inconnu", 0, ventilation.reouverture, ventilation.supercost);
+        return;
+      }
+
+      const reouvertureParAsset = ventilation.reouverture / items.length;
+      const supercostParAsset = ventilation.supercost / items.length;
       items.forEach((item) => {
         const ligne = garantirLigne(afficherTypeItem(item));
-        ligne.coutManuel += coutParAsset;
-        ajouterItemALigne(ligne, item.nom || "Inconnu", 0, coutParAsset);
+        ligne.reouverture += reouvertureParAsset;
+        ligne.supercost += supercostParAsset;
+        ajouterItemALigne(ligne, item.nom || "Inconnu", 0, reouvertureParAsset, supercostParAsset);
       });
     });
 
@@ -241,7 +297,7 @@ export default function CoutsTickets() {
       .map((ligne) => ({
         ...ligne,
         items: Array.from(ligne.items.values()).sort(
-          (a, b) => (b.coutImport + b.coutManuel) - (a.coutImport + a.coutManuel)
+          (a, b) => (b.glpi + b.reouverture + b.supercost) - (a.glpi + a.reouverture + a.supercost)
         ),
       }))
       .sort((a, b) => a.type.localeCompare(b.type));
@@ -270,12 +326,16 @@ export default function CoutsTickets() {
         <>
           <section className="stats-grid">
             <article className="stat-card">
-              <span>Ancien cout import</span>
-              <strong>{totaux.totalAncien.toFixed(2)}</strong>
+              <span>GLPI</span>
+              <strong>{totaux.totalGlpi.toFixed(2)}</strong>
             </article>
             <article className="stat-card">
-              <span>Nouveau cout Kanban</span>
-              <strong>{totaux.totalNouveau.toFixed(2)}</strong>
+              <span>Reouverture</span>
+              <strong>{totaux.totalReouverture.toFixed(2)}</strong>
+            </article>
+            <article className="stat-card">
+              <span>Supercost</span>
+              <strong>{totaux.totalSupercost.toFixed(2)}</strong>
             </article>
             <article className="stat-card">
               <span>Cout total</span>
@@ -292,8 +352,9 @@ export default function CoutsTickets() {
                 <thead>
                   <tr>
                     <th style={stylesCoutsMateriel.th}>Materiel</th>
-                    <th style={stylesCoutsMateriel.th}>Cout import</th>
-                    <th style={stylesCoutsMateriel.th}>Cout manuel</th>
+                    <th style={stylesCoutsMateriel.th}>GLPI</th>
+                    <th style={stylesCoutsMateriel.th}>Reouverture</th>
+                    <th style={stylesCoutsMateriel.th}>Supercost</th>
                     <th style={stylesCoutsMateriel.th}>Total</th>
                   </tr>
                 </thead>
@@ -309,21 +370,23 @@ export default function CoutsTickets() {
                         >
                           {ligne.type} {ouvert ? '▲' : '▼'}
                         </td>
-                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutImport)}</td>
-                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutManuel)}</td>
-                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.coutImport + ligne.coutManuel)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.glpi)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.reouverture)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.supercost)}</td>
+                        <td style={stylesCoutsMateriel.td}>{formaterMontant(ligne.glpi + ligne.reouverture + ligne.supercost)}</td>
                       </tr>,
                     ];
                     if (ouvert) {
                       rangees.push(
                         <tr key={`${ligne.type}-detail`}>
-                          <td colSpan={4} style={{ padding: 0 }}>
+                          <td colSpan={5} style={{ padding: 0 }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)' }}>
                               <thead>
                                 <tr>
                                   <th style={{ ...stylesCoutsMateriel.th, paddingLeft: '32px', fontSize: '11px' }}>Item</th>
-                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Cout import</th>
-                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Cout manuel</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>GLPI</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Reouverture</th>
+                                  <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Supercost</th>
                                   <th style={{ ...stylesCoutsMateriel.th, fontSize: '11px' }}>Total</th>
                                 </tr>
                               </thead>
@@ -331,9 +394,10 @@ export default function CoutsTickets() {
                                 {ligne.items.map((item) => (
                                   <tr key={item.nom}>
                                     <td style={{ ...stylesCoutsMateriel.td, paddingLeft: '32px', color: '#a5b4fc', fontSize: '13px' }}>{item.nom}</td>
-                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutImport)}</td>
-                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutManuel)}</td>
-                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.coutImport + item.coutManuel)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.glpi)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.reouverture)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.supercost)}</td>
+                                    <td style={{ ...stylesCoutsMateriel.td, fontSize: '13px' }}>{formaterMontant(item.glpi + item.reouverture + item.supercost)}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -346,8 +410,9 @@ export default function CoutsTickets() {
                   })}
                   <tr>
                     <td style={stylesCoutsMateriel.totalLabel}>Total</td>
-                    <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalAncien)}</td>
-                    <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalNouveau)}</td>
+                    <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalGlpi)}</td>
+                    <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalReouverture)}</td>
+                    <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalSupercost)}</td>
                     <td style={stylesCoutsMateriel.totalCell}>{formaterMontant(totaux.totalGeneral)}</td>
                   </tr>
                 </tbody>
