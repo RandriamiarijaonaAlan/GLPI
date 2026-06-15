@@ -2,6 +2,8 @@
 const COLONNES_ASSET = ['name', 'status', 'location', 'manufacturer', 'item_type', 'model', 'inventory_number', 'user'];
 const COLONNES_TICKET = ['ref_ticket', 'date', 'heure', 'type', 'titre', 'description', 'status', 'priority', 'items'];
 const COLONNES_COUT = ['num_ticket', 'duration_second', 'time_cost', 'fixed_cost'];
+const COLONNES_MVT = ['ticket', 'mvt', 'valeur'];
+const VALEURS_MVT = ['cancel', '2', 'open', '5', 'close', 'closed'];
 
 // Retourne true si le texte contient des séquences typiques de double-encodage UTF-8/Latin-1
 // (ex : "Ã©" au lieu de "é", "Ã " au lieu de "à")
@@ -83,6 +85,17 @@ function normaliserNomColonne(colonne) {
   return String(colonne || '').trim().toLowerCase();
 }
 
+function estLigneMouvementSansEntete(valeurs) {
+  if (!Array.isArray(valeurs) || valeurs.length < 2) {
+    return false;
+  }
+
+  const ticket = Number(String(valeurs[0] || '').trim());
+  const mvt = normaliserNomColonne(valeurs[1]);
+
+  return Number.isInteger(ticket) && ticket > 0 && VALEURS_MVT.includes(mvt);
+}
+
 export function convertirCsvEnJson(texteCsv) {
   if (!texteCsv || !texteCsv.trim()) {
     return [];
@@ -104,10 +117,15 @@ export function convertirCsvEnJson(texteCsv) {
     return [];
   }
 
-  const colonnes = decouperLigneCsv(lignes[indexEntete], separateur).map(normaliserNomColonne);
+  const premiereLigne = decouperLigneCsv(lignes[indexEntete], separateur);
+  const csvMouvementSansEntete = estLigneMouvementSansEntete(premiereLigne);
+  const colonnes = csvMouvementSansEntete
+    ? COLONNES_MVT
+    : premiereLigne.map(normaliserNomColonne);
+  const indexPremiereDonnee = csvMouvementSansEntete ? indexEntete : indexEntete + 1;
 
   const donnees = [];
-  for (let i = indexEntete + 1; i < lignes.length; i++) {
+  for (let i = indexPremiereDonnee; i < lignes.length; i++) {
     const ligne = lignes[i];
 
     // Ignorer les lignes totalement vides
@@ -134,13 +152,18 @@ function calculerScore(colonnesCsv, colonnesAttendues) {
 }
 
 // Détecte automatiquement le type des données CSV selon ses colonnes
-// Retourne : 'ASSET', 'TICKET', 'COUT' ou 'INCONNU'
+// Retourne : 'ASSET', 'TICKET', 'COUT', 'MVT' ou 'INCONNU'
 export function detecterTypeCsv(donnees) {
   if (!donnees || donnees.length === 0) {
     return 'INCONNU';
   }
 
   const colonnesCsv = Object.keys(donnees[0]);
+
+  // MVT : correspondance exacte sur les 3 colonnes obligatoires
+  if (calculerScore(colonnesCsv, COLONNES_MVT) === COLONNES_MVT.length) {
+    return 'MVT';
+  }
 
   const scoreAsset = calculerScore(colonnesCsv, COLONNES_ASSET);
   const scoreTicket = calculerScore(colonnesCsv, COLONNES_TICKET);

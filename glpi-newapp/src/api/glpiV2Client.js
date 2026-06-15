@@ -1,10 +1,15 @@
 import axios from 'axios';
+import { adapterGlpiOffline, modeGlpiOfflineActif } from './offlineGlpiStore';
 
 const CLE_JETON_V2 = 'glpi_v2_access_token';
 const CLE_EXPIRATION_V2 = 'glpi_v2_expiration';
 const MARGE_EXPIRATION_MS = 60_000;
 
 function verifierConfigurationV2() {
+  if (modeGlpiOfflineActif()) {
+    return;
+  }
+
   const variablesManquantes = [
     ['VITE_GLPI_V2_API_URL', import.meta.env.VITE_GLPI_V2_API_URL],
     ['VITE_GLPI_OAUTH_TOKEN_URL', import.meta.env.VITE_GLPI_OAUTH_TOKEN_URL],
@@ -62,6 +67,12 @@ function tokenEncoreValide(expiration) {
 
 export async function obtenirTokenV2() {
   verifierConfigurationV2();
+
+  if (modeGlpiOfflineActif()) {
+    const jeton = 'offline-token';
+    sauvegarderTokenV2(jeton, Date.now() + 3600 * 1000);
+    return jeton;
+  }
 
   const corps = new URLSearchParams();
   corps.set('grant_type', 'password');
@@ -123,6 +134,7 @@ export async function garantirTokenV2() {
 
 const clientGlpiV2 = axios.create({
   baseURL: import.meta.env.VITE_GLPI_V2_API_URL,
+  adapter: modeGlpiOfflineActif() ? adapterGlpiOffline : undefined,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -163,6 +175,14 @@ clientGlpiV2.interceptors.response.use(
 
 export async function testerConnexionGlpiV2() {
   try {
+    if (modeGlpiOfflineActif()) {
+      return {
+        succes: true,
+        api: 'v2',
+        message: 'Connexion GLPI locale offline active',
+      };
+    }
+
     supprimerTokenV2();
     const token = await obtenirTokenV2();
 

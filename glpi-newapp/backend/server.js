@@ -22,6 +22,37 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS kanban_ticket_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    cout_fixe REAL NOT NULL DEFAULT 0,
+    commentaire TEXT,
+    nombre_items INTEGER NOT NULL DEFAULT 1,
+    cout_par_item REAL NOT NULL DEFAULT 0,
+    items_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+`).run();
+
+function assurerColonne(table, colonne, definition) {
+  const colonnes = db.prepare(`PRAGMA table_info(${table})`).all();
+  const existe = colonnes.some((info) => info.name === colonne);
+
+  if (!existe) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`).run();
+  }
+}
+
+assurerColonne("kanban_ticket_costs", "cout_fixe", "REAL NOT NULL DEFAULT 0");
+assurerColonne("kanban_ticket_costs", "commentaire", "TEXT");
+assurerColonne("kanban_ticket_costs", "nombre_items", "INTEGER NOT NULL DEFAULT 1");
+assurerColonne("kanban_ticket_costs", "cout_par_item", "REAL NOT NULL DEFAULT 0");
+assurerColonne("kanban_ticket_costs", "items_json", "TEXT");
+assurerColonne("kanban_ticket_costs", "created_at", "TEXT NOT NULL DEFAULT ''");
+assurerColonne("kanban_ticket_costs", "updated_at", "TEXT NOT NULL DEFAULT ''");
+
 const total = db.prepare("SELECT COUNT(*) AS total FROM kanban_statuses").get();
 
 if (total.total === 0) {
@@ -33,7 +64,7 @@ if (total.total === 0) {
 
   insertion.run("nouveau", "Nouveau", "vaovao", "#cfe8ff", 1, 1);
   insertion.run("in_progress", "In progress", "efa manao", "#ffe2b8", 2, 2);
-  insertion.run("termine", "Terminé", "vita", "#d8f3d8", 3, 5);
+  insertion.run("termine", "Termine", "vita", "#d8f3d8", 3, 6);
 }
 
 app.get("/api/kanban/config", (req, res) => {
@@ -63,7 +94,7 @@ app.put("/api/kanban/config", (req, res) => {
     miseAJour.run(colonne.nomMalgache, colonne.couleur, colonne.code);
   });
 
-  res.json({ message: "Configuration sauvegardée" });
+  return res.json({ message: "Configuration sauvegardee" });
 });
 
 app.post("/api/kanban/config/reset", (req, res) => {
@@ -77,11 +108,164 @@ app.post("/api/kanban/config/reset", (req, res) => {
 
   insertion.run("nouveau", "Nouveau", "vaovao", "#cfe8ff", 1, 1);
   insertion.run("in_progress", "In progress", "efa manao", "#ffe2b8", 2, 2);
-  insertion.run("termine", "Terminé", "vita", "#d8f3d8", 3, 5);
+  insertion.run("termine", "Termine", "vita", "#d8f3d8", 3, 6);
 
-  res.json({ message: "Configuration réinitialisée" });
+  return res.json({ message: "Configuration reinitialisee" });
+});
+
+app.post("/api/kanban/data/reset", (req, res) => {
+  const coutsSupprimes = db.prepare("DELETE FROM kanban_ticket_costs").run().changes;
+
+  db.prepare("DELETE FROM kanban_statuses").run();
+
+  const insertion = db.prepare(`
+    INSERT INTO kanban_statuses
+    (code, nom_fr, nom_mg, couleur, ordre, statut_glpi, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `);
+
+  insertion.run("nouveau", "Nouveau", "vaovao", "#cfe8ff", 1, 1);
+  insertion.run("in_progress", "In progress", "efa manao", "#ffe2b8", 2, 2);
+  insertion.run("termine", "Termine", "vita", "#d8f3d8", 3, 6);
+
+  return res.json({
+    message: "Donnees Kanban reinitialisees",
+    couts_supprimes: coutsSupprimes,
+  });
+});
+
+app.get("/api/kanban/costs", (req, res) => {
+  const lignes = db.prepare(`
+    SELECT id, ticket_id, cout_fixe, commentaire, nombre_items, cout_par_item, items_json, created_at, updated_at
+    FROM kanban_ticket_costs
+    ORDER BY created_at DESC
+  `).all();
+
+  return res.json(lignes);
+});
+
+app.post("/api/kanban/costs", (req, res) => {
+  const ticketId = Number(req.body.ticket_id);
+  const coutFixe = Number(req.body.cout_fixe || 0);
+  const commentaire = String(req.body.commentaire || "").trim();
+  const nombreItems = Math.max(1, Number(req.body.nombre_items || 1));
+  const coutParItem = coutFixe / nombreItems;
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  const itemsJson = JSON.stringify(
+    items.map((item) => ({
+      nom: String(item.nom || "-"),
+      itemtype: String(item.itemtype || "-"),
+      id: item.items_id || item.id || "",
+    })),
+  );
+
+  if (!ticketId || Number.isNaN(ticketId)) {
+    return res.status(400).json({ message: "ticket_id invalide" });
+  }
+
+  if (Number.isNaN(coutFixe) || coutFixe < 0) {
+    return res.status(400).json({ message: "cout_fixe invalide" });
+  }
+
+  const resultat = db.prepare(`
+    INSERT INTO kanban_ticket_costs
+    (ticket_id, cout_fixe, commentaire, nombre_items, cout_par_item, items_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).run(ticketId, coutFixe, commentaire, nombreItems, coutParItem, itemsJson);
+
+  return res.json({
+    id: resultat.lastInsertRowid,
+    ticket_id: ticketId,
+    cout_fixe: coutFixe,
+    commentaire,
+    nombre_items: nombreItems,
+    cout_par_item: coutParItem,
+    items_json: itemsJson,
+  });
+});
+
+app.delete("/api/kanban/costs/latest/:ticketId", (req, res) => {
+  const ticketId = Number(req.params.ticketId);
+
+  if (!ticketId || Number.isNaN(ticketId)) {
+    return res.status(400).json({ message: "ticketId invalide" });
+  }
+
+  const dernierCout = db.prepare(`
+    SELECT id
+    FROM kanban_ticket_costs
+    WHERE ticket_id = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 1
+  `).get(ticketId);
+
+  if (!dernierCout) {
+    return res.json({
+      supprime: false,
+      message: "Aucun cout a supprimer pour ce ticket",
+    });
+  }
+
+  db.prepare("DELETE FROM kanban_ticket_costs WHERE id = ?").run(dernierCout.id);
+
+  return res.json({
+    supprime: true,
+    id: dernierCout.id,
+  });
+});
+
+app.patch("/api/kanban/costs/latest/:ticketId/reopen", (req, res) => {
+  const ticketId = Number(req.params.ticketId);
+  const pourcentage = Number(String(req.body.pourcentage || 0).replace("%", "").replace(",", "."));
+
+  if (!ticketId || Number.isNaN(ticketId)) {
+    return res.status(400).json({ message: "ticketId invalide" });
+  }
+
+  if (Number.isNaN(pourcentage) || pourcentage < 0) {
+    return res.status(400).json({ message: "pourcentage invalide" });
+  }
+
+  const dernierCout = db.prepare(`
+    SELECT id, cout_fixe, nombre_items
+    FROM kanban_ticket_costs
+    WHERE ticket_id = ?
+    ORDER BY datetime(created_at) DESC, id DESC
+    LIMIT 1
+  `).get(ticketId);
+
+  if (!dernierCout) {
+    return res.status(404).json({ message: "Aucun cout a mettre a jour pour ce ticket" });
+  }
+
+  const ancienCout = Number(dernierCout.cout_fixe || 0);
+  const nouveauCout = ancienCout + (ancienCout * pourcentage) / 100;
+  const nombreItems = Math.max(1, Number(dernierCout.nombre_items || 1));
+  const coutParItem = nouveauCout / nombreItems;
+
+  db.prepare(`
+    UPDATE kanban_ticket_costs
+    SET cout_fixe = ?,
+        cout_par_item = ?,
+        commentaire = COALESCE(commentaire, '') || ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    nouveauCout,
+    coutParItem,
+    ` | Reouverture +${pourcentage}%`,
+    dernierCout.id,
+  );
+
+  return res.json({
+    id: dernierCout.id,
+    ancien_cout: ancienCout,
+    nouveau_cout: nouveauCout,
+    pourcentage,
+    cout_par_item: coutParItem,
+  });
 });
 
 app.listen(3001, () => {
-  console.log("Backend SQLite lancé sur http://localhost:3001");
+  console.log("Backend SQLite lance sur http://localhost:3001");
 });

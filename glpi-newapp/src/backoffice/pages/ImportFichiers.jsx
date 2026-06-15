@@ -6,14 +6,16 @@ import {
   importerTicketsCsv,
   importerCoutsCsv,
 } from '../../api/importApi';
+import { importerMouvementsCsv } from '../../api/importMouvementsApi';
 import { importerImagesZip } from '../../api/importImagesApi';
 
-const NB_EMPLACEMENTS_FICHIERS = 3;
+const NB_EMPLACEMENTS_FICHIERS = 4;
 
 const LIBELLES_TYPES = {
   ASSET: 'Éléments (ASSET)',
   TICKET: 'Tickets (TICKET)',
   COUT: 'Coûts (COUT)',
+  MVT: 'Mouvements (MVT)',
   INCONNU: 'Type inconnu',
 };
 
@@ -21,6 +23,7 @@ const COULEURS_BADGES_TYPES = {
   ASSET: '#087443',
   TICKET: '#1d4ed8',
   COUT: '#92400e',
+  MVT: '#6d28d9',
   INCONNU: '#b42318',
 };
 
@@ -46,6 +49,7 @@ function creerEtatImportInitial() {
     elements: creerCarteImport(),
     tickets: creerCarteImport(),
     couts: creerCarteImport(),
+    mouvements: creerCarteImport(),
     images: creerCarteImport(),
   };
 }
@@ -185,6 +189,7 @@ export default function ImporterFichiers() {
     const fichiersElements = resultatsAnalyse.filter((analyse) => analyse.type === 'ASSET');
     const fichiersTickets = resultatsAnalyse.filter((analyse) => analyse.type === 'TICKET');
     const fichiersCouts = resultatsAnalyse.filter((analyse) => analyse.type === 'COUT');
+    const fichiersMouvements = resultatsAnalyse.filter((analyse) => analyse.type === 'MVT');
     const fichiersImages = fichierZip ? [fichierZip] : [];
 
     definirEtatImport({
@@ -204,6 +209,12 @@ export default function ImporterFichiers() {
         statut: fichiersCouts.length === 0 ? 'ignore' : 'en_attente',
         reussi: 0,
         total: fichiersCouts.length,
+        erreurs: 0,
+      },
+      mouvements: {
+        statut: fichiersMouvements.length === 0 ? 'ignore' : 'en_attente',
+        reussi: 0,
+        total: fichiersMouvements.length,
         erreurs: 0,
       },
       images: {
@@ -228,6 +239,9 @@ export default function ImporterFichiers() {
       coutsImportes: 0,
       coutsIgnores: 0,
       erreursCouts: 0,
+      mouvementsImportes: 0,
+      mouvementsIgnores: 0,
+      erreursMouvements: 0,
       associationsCreees: 0,
       doublons: 0,
       lignesIgnorees: 0,
@@ -241,6 +255,7 @@ export default function ImporterFichiers() {
       ticketsImportes: 0,
       associationsCreees: 0,
       coutsImportes: 0,
+      mouvementsImportes: 0,
       doublons: 0,
       erreurs: 0,
     };
@@ -291,6 +306,7 @@ export default function ImporterFichiers() {
           ticketsImportes: 0,
           associationsCreees: 0,
           coutsImportes: 0,
+          mouvementsImportes: 0,
           doublons: 0,
           erreurs: 0,
           utilisateursCrees: 0,
@@ -343,6 +359,13 @@ export default function ImporterFichiers() {
             resumeGlobal.erreursCouts += res.erreursCouts;
             resumeGlobal.lignesImportees += res.importes;
             resumeGlobal.lignesIgnorees += res.coutsIgnores + res.erreursCouts;
+          } else if (cle === 'mouvements') {
+            resumeFichier.mouvementsImportes = res.importes;
+            resumeGlobal.mouvementsImportes += res.importes;
+            resumeGlobal.mouvementsIgnores += res.ignores || 0;
+            resumeGlobal.erreursMouvements += res.erreurs;
+            resumeGlobal.lignesImportees += res.importes;
+            resumeGlobal.lignesIgnorees += (res.ignores || 0) + res.erreurs;
           }
 
           resumeGlobal.avertissements.push(...res.avertissements);
@@ -367,6 +390,7 @@ export default function ImporterFichiers() {
         resumeJournal.ticketsImportes += resumeFichier.ticketsImportes;
         resumeJournal.associationsCreees += resumeFichier.associationsCreees;
         resumeJournal.coutsImportes += resumeFichier.coutsImportes;
+        resumeJournal.mouvementsImportes += resumeFichier.mouvementsImportes;
         resumeJournal.doublons += resumeFichier.doublons;
         resumeJournal.erreurs += resumeFichier.erreurs;
         resumesFichiers.push(resumeFichier);
@@ -399,12 +423,15 @@ export default function ImporterFichiers() {
     }
 
     const resumeElements = await traiterFichiersCsv('elements', fichiersElements, importerElementsCsv, 'Éléments');
-    definirProgressionGlobale(50);
+    definirProgressionGlobale(45);
 
     const resumeTickets = await traiterFichiersCsv('tickets', fichiersTickets, importerTicketsCsv, 'Tickets');
-    definirProgressionGlobale(70);
+    definirProgressionGlobale(60);
 
     const resumeCouts = await traiterFichiersCsv('couts', fichiersCouts, importerCoutsCsv, 'Coûts');
+    definirProgressionGlobale(75);
+
+    const resumeMouvements = await traiterFichiersCsv('mouvements', fichiersMouvements, importerMouvementsCsv, 'Mouvements');
     definirProgressionGlobale(90);
 
     let resumeImagesImport = { totalTraitables: 0, importes: 0, erreurs: 0 };
@@ -492,6 +519,15 @@ export default function ImporterFichiers() {
               ? 'erreur'
               : 'reussi',
       },
+      mouvements: {
+        ...precedent.mouvements,
+        statut:
+          precedent.mouvements.total === 0
+            ? 'ignore'
+            : precedent.mouvements.erreurs > 0
+              ? 'erreur'
+              : 'reussi',
+      },
       images: {
         ...precedent.images,
         statut:
@@ -506,7 +542,7 @@ export default function ImporterFichiers() {
     }));
     ajouterLog('Import global terminé');
     ajouterLog(
-      `Résultat final : Réussi : ${resumeGlobal.elementsImportes + resumeGlobal.ticketsImportes + resumeGlobal.coutsImportes + resumeImagesImport.importes} / ${resumeElements.totalTraitables + resumeTickets.totalTraitables + resumeCouts.totalTraitables + resumeImagesImport.totalTraitables}, Erreur : ${resumeGlobal.erreurs.length + resumeImagesImport.erreurs}`
+      `Résultat final : Réussi : ${resumeGlobal.elementsImportes + resumeGlobal.ticketsImportes + resumeGlobal.coutsImportes + resumeGlobal.mouvementsImportes + resumeImagesImport.importes} / ${resumeElements.totalTraitables + resumeTickets.totalTraitables + resumeCouts.totalTraitables + resumeMouvements.totalTraitables + resumeImagesImport.totalTraitables}, Erreur : ${resumeGlobal.erreurs.length + resumeImagesImport.erreurs}`
     );
     ajouterLog(`fichiers ignorés : ${resumeGlobal.fichiersIgnores}`);
     ajouterLog(`doublons ignorés : ${resumeGlobal.doublons}`);
@@ -570,6 +606,7 @@ export default function ImporterFichiers() {
             ['elements', 'Éléments'],
             ['tickets', 'Tickets'],
             ['couts', 'Coûts'],
+            ['mouvements', 'Mouvements'],
             ['images', 'Images'],
           ].map(([cle, libelle]) => {
             const carte = etatImport[cle];
@@ -825,7 +862,7 @@ export default function ImporterFichiers() {
               Résultat final :
             </p>
             <p style={{ margin: '8px 0 0' }}>
-              - Réussi : {resume.elementsImportes + resume.ticketsImportes + resume.coutsImportes + (resumeImages?.imagesImportees || 0)} / {resume.lignesAnalysees + (resumeImages?.imagesDetectees || 0)}
+              - Réussi : {resume.elementsImportes + resume.ticketsImportes + resume.coutsImportes + (resume.mouvementsImportes || 0) + (resumeImages?.imagesImportees || 0)} / {resume.lignesAnalysees + (resumeImages?.imagesDetectees || 0)}
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - Erreur : {resume.erreurs.length + (resumeImages?.erreursImages || 0)}
@@ -853,6 +890,12 @@ export default function ImporterFichiers() {
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - erreurs coûts : {resume.erreursCouts || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - mouvements appliqués : {resume.mouvementsImportes || 0}
+            </p>
+            <p style={{ margin: '6px 0 0' }}>
+              - mouvements ignorés : {resume.mouvementsIgnores || 0}
             </p>
             <p style={{ margin: '6px 0 0' }}>
               - avertissements : {resume.avertissements.length + (resumeImages?.avertissementsImages?.length || 0)}

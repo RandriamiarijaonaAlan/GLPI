@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { modeGlpiOfflineActif } from './offlineGlpiStore';
 import {
   recupererTokenV2 as recupererTokenOAuthV2,
   sauvegarderTokenV2,
@@ -15,12 +16,14 @@ const messagesErreurGlpi = {
   ERROR_APP_TOKEN_PARAMETERS_MISSING: 'App Token GLPI manquant dans le fichier .env',
   ERROR_WRONG_APP_TOKEN_PARAMETER: 'App Token GLPI invalide',
   ERROR_RIGHT_MISSING: 'User Token GLPI invalide ou droits API insuffisants',
-  ERROR_NOT_ALLOWED_IP: 'IP non autorisée dans le client API GLPI',
-  ERROR_SESSION_TOKEN_INVALID: 'Session GLPI expirée',
+  ERROR_NOT_ALLOWED_IP: 'IP non autorisee dans le client API GLPI',
+  ERROR_SESSION_TOKEN_INVALID: 'Session GLPI expiree',
   ERROR_SESSION_TOKEN_MISSING: 'Session GLPI manquante',
 };
 
 function verifierConfigurationLegacy() {
+  if (modeGlpiOfflineActif()) return;
+
   if (!import.meta.env.VITE_GLPI_APP_TOKEN) {
     throw new Error('App Token GLPI manquant dans le fichier .env');
   }
@@ -131,7 +134,12 @@ export async function initialiserSessionLegacy() {
   verifierConfigurationLegacy();
   supprimerSessionLegacy();
 
-  // Cette requête n'utilise pas glpiLegacyClient pour éviter de déclencher ses interceptors.
+  if (modeGlpiOfflineActif()) {
+    const jetonSession = 'offline-session';
+    enregistrerSessionLegacy(jetonSession);
+    return jetonSession;
+  }
+
   const reponse = await axios.get(`${import.meta.env.VITE_GLPI_LEGACY_API_URL}/initSession`, {
     headers: {
       'App-Token': import.meta.env.VITE_GLPI_APP_TOKEN,
@@ -144,7 +152,7 @@ export async function initialiserSessionLegacy() {
   const jetonSession = reponse.data?.session_token;
 
   if (!jetonSession) {
-    throw new Error(`Réponse initSession sans session_token: ${JSON.stringify(reponse.data)}`);
+    throw new Error(`Reponse initSession sans session_token: ${JSON.stringify(reponse.data)}`);
   }
 
   enregistrerSessionLegacy(jetonSession);
@@ -163,18 +171,26 @@ export async function garantirSessionLegacy() {
 
 export async function testerConnexionGlpiLegacy() {
   try {
+    if (modeGlpiOfflineActif()) {
+      return {
+        succes: true,
+        api: 'legacy',
+        message: 'Connexion GLPI locale offline active',
+      };
+    }
+
     const jetonSession = await garantirSessionLegacy();
 
     return {
       succes: Boolean(jetonSession),
       api: 'legacy',
-      message: 'Connexion API GLPI legacy réussie',
+      message: 'Connexion API GLPI legacy reussie',
     };
   } catch (erreur) {
     return {
       succes: false,
       api: 'legacy',
-      message: 'Connexion API GLPI legacy échouée',
+      message: 'Connexion API GLPI legacy echouee',
       erreur: recupererErreurLisible(erreur),
     };
   }

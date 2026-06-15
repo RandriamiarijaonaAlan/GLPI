@@ -1,6 +1,7 @@
 import axios from 'axios';
 import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
+import { modeGlpiOfflineActif } from './offlineGlpiStore';
 import { afficherValeurGlpi } from '../utils/affichage';
 import { garantirSessionLegacy } from './authApi';
 
@@ -311,6 +312,10 @@ export async function recupererDocumentsParElement() {
 // L'appelant est responsable de révoquer l'URL via URL.revokeObjectURL quand elle n'est plus nécessaire.
 export async function chargerUrlImageDocument(idDocument) {
   try {
+    if (modeGlpiOfflineActif()) {
+      return null;
+    }
+
     const jeton = await garantirSessionLegacy();
     const reponse = await axios.get(
       `${import.meta.env.VITE_GLPI_LEGACY_API_URL}/Document/${idDocument}`,

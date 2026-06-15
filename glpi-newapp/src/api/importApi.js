@@ -1568,6 +1568,9 @@ export function ajouterResumeFinalImport(ajouterLog, resumeGlobal, resumeFichier
     } else if (resumeFichier.type === 'COUT') {
       ajouterLigneJournal(ajouterLog, 'Coûts créés', resumeFichier.coutsImportes);
       ajouterLigneJournal(ajouterLog, 'Erreurs', resumeFichier.erreurs);
+    } else if (resumeFichier.type === 'MVT') {
+      ajouterLigneJournal(ajouterLog, 'Mouvements appliqués', resumeFichier.mouvementsImportes);
+      ajouterLigneJournal(ajouterLog, 'Erreurs', resumeFichier.erreurs);
     }
   }
 

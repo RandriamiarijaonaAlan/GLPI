@@ -12,6 +12,7 @@ import LayoutFrontoffice from './frontoffice/components/LayoutFrontoffice';
 import ListeElements from './frontoffice/pages/ListeElements';
 import CreationTicket from './frontoffice/pages/CreationTicket';
 import ConfigurationKanban from './backoffice/pages/ConfigurationKanban';
+import CoutsTickets from './backoffice/pages/CoutsTickets';
 import KanbanTickets from './frontoffice/pages/KanbanTicket';
 
 const routeur = createBrowserRouter(
@@ -58,6 +59,10 @@ const routeur = createBrowserRouter(
             {
               path:'kanban-config',
               element: <ConfigurationKanban />,
+            },
+            {
+              path: 'couts',
+              element: <CoutsTickets />,
             }
           ],
         },

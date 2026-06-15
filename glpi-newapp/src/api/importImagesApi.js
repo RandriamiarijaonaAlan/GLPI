@@ -1,5 +1,6 @@
 import axios from 'axios';
 import clientGlpiLegacy from './glpiLegacyClient';
+import { importerDocumentOffline, modeGlpiOfflineActif } from './offlineGlpiStore';
 import { garantirSessionLegacy } from './authApi';
 import { recupererTousLesElements } from './assetsApi';
 import { lireFichierZip } from '../utils/zip';
@@ -50,6 +51,13 @@ function mimeTypePourExtension(extension) {
 // Téléverse une image comme Document GLPI via multipart/form-data (API v1 legacy)
 // Exception JSON justifiée : GLPI exige multipart/form-data pour l'upload de fichiers
 export async function televerserImageCommeDocument(image) {
+  if (modeGlpiOfflineActif()) {
+    return importerDocumentOffline(
+      { name: image.nomFichier },
+      'NEWAPP_IMPORT_JUIN_2026',
+    );
+  }
+
   const jetonSession = await garantirSessionLegacy();
 
   const formData = new FormData();
