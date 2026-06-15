@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { adapterGlpiOffline, modeGlpiOfflineActif } from './offlineGlpiStore';
 import {
   estErreurSessionLegacy,
   garantirSessionLegacy,
@@ -9,6 +10,7 @@ import {
 
 const clientGlpiLegacy = axios.create({
   baseURL: import.meta.env.VITE_GLPI_LEGACY_API_URL,
+  adapter: modeGlpiOfflineActif() ? adapterGlpiOffline : undefined,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -30,7 +32,11 @@ clientGlpiLegacy.interceptors.request.use(async (config) => {
     return config;
   }
 
-  // Toute requête métier GLPI reçoit automatiquement une session legacy valide.
+  if (modeGlpiOfflineActif()) {
+    config.headers['Session-Token'] = 'offline-session';
+    return config;
+  }
+
   const jetonSession = await garantirSessionLegacy();
   config.headers['Session-Token'] = jetonSession;
 
