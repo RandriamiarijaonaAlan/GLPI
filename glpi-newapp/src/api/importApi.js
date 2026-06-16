@@ -1,5 +1,7 @@
 import clientGlpiLegacy from './glpiLegacyClient';
 import clientGlpiV2 from './glpiV2Client';
+import { creerTicket, creerCoutTicket } from './ticketsApi';
+import { creerElement } from './assetsApi';
 
 const MARQUAGE_IMPORT = 'NEWAPP_IMPORT_JUIN_2026';
 
@@ -636,13 +638,6 @@ function ajouterTicketDansIndexDoublons(indexDoublonsTickets, ticket) {
   }
 }
 
-// Recherche un ticket par référence (Ref_Ticket stocké dans le contenu)
-function trouverTicketParReference(tickets, refTicket) {
-  if (!estValide(refTicket)) return null;
-  return tickets.find((ticket) =>
-    (ticket.content || '').includes(`Ref_Ticket: ${refTicket}`)
-  ) || null;
-}
 
 // Recherche un ticket par référence dans le contenu ou le commentaire GLPI
 function trouverTicketParReferenceDansGlpi(tickets, refTicket) {
@@ -694,31 +689,6 @@ function construireDateTicketDepuisCsv(ligne) {
 
   const dateGLPI = `${annee}-${formaterDeuxChiffres(mois)}-${formaterDeuxChiffres(jour)} ${heures}:${minutes}:${secondes}`;
   return { dateGLPI, avertissement: null };
-}
-
-function estErreurChampDateGLPI(erreur) {
-  const message = String(erreur?.response?.data ? JSON.stringify(erreur.response.data) : erreur?.message || '').toLowerCase();
-  return (
-    message.includes('date_creation') ||
-    message.includes('date') && (message.includes('unknown') || message.includes('invalid') || message.includes('not allowed') || message.includes('refused'))
-  );
-}
-
-async function creerTicketAvecFallbackDate(corpsTicket, dateGLPI, ajouterLog) {
-  if (!dateGLPI) {
-    return clientGlpiLegacy.post('/Ticket', { input: corpsTicket });
-  }
-
-  // Envoyer date et date_creation simultanément dans le body de création
-  try {
-    return await clientGlpiLegacy.post('/Ticket', {
-      input: { ...corpsTicket, date: dateGLPI, date_creation: dateGLPI },
-    });
-  } catch (erreurDate) {
-    if (!estErreurChampDateGLPI(erreurDate)) throw erreurDate;
-    ajouterLog('Champs date refusés à la création par GLPI, ticket créé sans date CSV');
-    return clientGlpiLegacy.post('/Ticket', { input: corpsTicket });
-  }
 }
 
 // Met à jour la date d'un ticket existant via PUT (après création)
@@ -847,17 +817,6 @@ export function convertirNombreCsv(valeur, valeurParDefaut = 0) {
   return Number.isNaN(nombre) ? valeurParDefaut : nombre;
 }
 
-// Recherche un élément par nom, otherserial ou serial (insensible à la casse)
-function trouverElementParNom(elements, nomRecherche) {
-  if (!estValide(nomRecherche)) return null;
-  const recherche = nomRecherche.toLowerCase();
-  return (
-    elements.find((el) => (el.name || '').toLowerCase() === recherche) ||
-    elements.find((el) => estValide(el.otherserial) && el.otherserial.toLowerCase() === recherche) ||
-    elements.find((el) => estValide(el.serial) && el.serial.toLowerCase() === recherche) ||
-    null
-  );
-}
 
 function extraireNomsElementsDepuisItems(valeurItems) {
   if (Array.isArray(valeurItems)) {
@@ -952,15 +911,6 @@ function normaliserCleRelation(itemtype, itemsId) {
   return `${String(itemtype || '').trim().toLowerCase()}#${String(itemsId || '').trim()}`;
 }
 
-function relationItemTicketDejaExistante(relationsExistantes, element) {
-  const cleRecherchee = normaliserCleRelation(element.itemtype, element.id);
-
-  return relationsExistantes.some((relation) => {
-    const itemtypeRelation = relation.itemtype || relation.items_id?.itemtype || relation.items_id?.type;
-    const itemsIdRelation = relation.items_id?.id || relation.items_id?.items_id || relation.items_id;
-    return normaliserCleRelation(itemtypeRelation, itemsIdRelation) === cleRecherchee;
-  });
-}
 
 function construireIndexRelationsTicket(relationsExistantes) {
   return new Set(
@@ -984,20 +934,6 @@ async function recupererRelationsTicketExistantes(idTicket) {
   }
 }
 
-function trouverElementPourAssociation(elements, nomRecherche) {
-  const rechercheNormalisee = String(nomRecherche || '').trim().toLowerCase();
-
-  if (!rechercheNormalisee) {
-    return null;
-  }
-
-  return (
-    elements.find((element) => String(element.name || '').trim().toLowerCase() === rechercheNormalisee) ||
-    elements.find((element) => String(element.serial || '').trim().toLowerCase() === rechercheNormalisee) ||
-    elements.find((element) => String(element.otherserial || '').trim().toLowerCase() === rechercheNormalisee) ||
-    null
-  );
-}
 
 // Recherche un élément dans tous les types reconnus par name, serial, otherserial ou inventory_number
 // Charge chaque type à la demande et met en cache le résultat pour l'import en cours
@@ -1048,78 +984,6 @@ async function rechercherElementParNomOuInventaire(nomElement, ajouterLog = () =
 
   ajouterLog(`Recherche element ${nomElement} : non trouve`);
   return null;
-
-  for (const type of TYPES_ELEMENTS_VALIDES) {
-    const elements = cacheElementsTicketImport[type] || [];
-    const trouve = elements.find(
-      (el) =>
-        normaliserComparaisonElement(el.name) === recherche ||
-        normaliserComparaisonElement(el.serial) === recherche ||
-        normaliserComparaisonElement(el.otherserial) === recherche ||
-        normaliserComparaisonElement(el.inventory_number) === recherche
-    );
-
-    if (trouve) {
-      ajouterLog(`Recherche ${nomElement} dans ${type} : trouvé #${trouve.id}`);
-      // itemtype renvoyé = itemtype réel de l'API GLPI (ex: Glpi\Socket) pour la relation Item_Ticket
-      return { ...trouve, itemtype: itemtypeApiPourType(type) };
-    }
-
-    ajouterLog(`Recherche ${nomElement} dans ${type} : non trouvé`);
-  }
-
-  return null;
-}
-
-// Extrait l'identifiant créé depuis la réponse GLPI (format variable selon la version)
-function extraireIdCree(donnees) {
-  if (donnees?.id) return donnees.id;
-  if (Array.isArray(donnees)) return donnees[0]?.id || donnees[0]?.items_id;
-  return donnees?.items_id || null;
-}
-
-// L'API v2 attend le corps directement, sans le wrapper { input: ... } utilisé par v1
-async function creerElementV2(configuration, corpsElement) {
-  const reponse = await clientGlpiV2.post(configuration.endpointV2, corpsElement);
-  return reponse.data;
-}
-
-async function creerElementV1(configuration, corpsElement) {
-  const reponse = await clientGlpiLegacy.post(configuration.endpointV1, { input: corpsElement });
-  return reponse.data;
-}
-
-// Ordre : v1 d'abord (format { input: ... }), puis v2 si v1 échoue (corps direct sans input),
-// puis v1 avec champs minimaux en dernier recours.
-// Certains types (ex: Socket) ne sont accessibles qu'en v2 — le fallback v2 les couvre.
-async function creerElementAvecFallback(itemtype, corpsElement, ajouterLog) {
-  const configuration = typesElementsSupportes[itemtype];
-  const corpsMinimal = {
-    name: corpsElement.name,
-    entities_id: 0,
-    comment: corpsElement.comment,
-  };
-
-  try {
-    ajouterLog(`Création asset ${itemtype} via API v1`);
-    return await creerElementV1(configuration, corpsElement);
-  } catch (erreurV1) {
-    ajouterLog(`API v1 ${itemtype} refusée : ${formaterErreurApiComplete(erreurV1)}`);
-  }
-
-  try {
-    ajouterLog(`Création asset ${itemtype} via API v2`);
-    return await creerElementV2(configuration, corpsElement);
-  } catch (erreurV2) {
-    ajouterLog(`API v2 ${itemtype} refusée : ${formaterErreurApiComplete(erreurV2)}`);
-  }
-
-  try {
-    ajouterLog(`Nouvelle tentative ${itemtype} avec champs minimaux via API v1`);
-    return await creerElementV1(configuration, corpsMinimal);
-  } catch (erreurMinimale) {
-    throw new Error(formaterErreurApiComplete(erreurMinimale));
-  }
 }
 
 // ─── IMPORT ÉLÉMENTS (ASSET) ───────────────────────────────────────────────
@@ -1243,8 +1107,9 @@ export async function importerElementsCsv(donnees, ajouterLog) {
         corpsElement.users_id = utilisateurGlpi;
       }
 
-      const donneesCreation = await creerElementAvecFallback(itemType, corpsElement, ajouterLog);
-      const idCree = extraireIdCree(donneesCreation);
+      ajouterLog(`Création asset ${itemType}`);
+      const elementCree = await creerElement(itemType, corpsElement);
+      const idCree = elementCree.id;
 
       ajouterLog(`Asset créé : ${nom}`);
       resultat.importes++;
@@ -1329,27 +1194,17 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       continue;
     }
 
-    // Construire le contenu avec marquage et référence pour traçabilité
-    const lignesContenu = [];
-    if (estValide(description)) lignesContenu.push(description);
-    lignesContenu.push('');
-    lignesContenu.push(MARQUAGE_IMPORT);
-    if (estValide(refTicket)) lignesContenu.push(`Ref_Ticket: ${refTicket}`);
-    const contenu = lignesContenu.join('\n');
-
     try {
-      const corpsTicket = {
-        name: titre,
-        content: contenu,
+      const ticketCree = await creerTicket({
+        titre,
+        description,
         type: convertirTypeTicket(valeurColonneCsv(ligne, 'type')),
-        urgency: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
-        priority: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
+        urgence: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
+        priorite: convertirPrioriteTicket(valeurColonneCsv(ligne, 'priority')),
         status: convertirStatutTicket(valeurColonneCsv(ligne, 'status')),
-        entities_id: 0,
-      };
-
-      const reponseCreation = await creerTicketAvecFallbackDate(corpsTicket, dateGLPI, ajouterLog);
-      const idTicket = extraireIdCree(reponseCreation.data);
+        refTicket,
+      });
+      const idTicket = ticketCree.id;
 
       ajouterLog(`Ticket créé : ${refTicket || titre} → ID GLPI #${idTicket}`);
       resultat.importes++;
@@ -1364,7 +1219,8 @@ export async function importerTicketsCsv(donnees, ajouterLog) {
       }
 
       // Mémoriser localement pour la détection de doublons des lignes suivantes
-      ajouterTicketDansIndexDoublons(indexDoublonsTickets, { id: idTicket, name: titre, content: contenu });
+      const contenuIndex = estValide(refTicket) ? `Ref_Ticket: ${refTicket}` : '';
+      ajouterTicketDansIndexDoublons(indexDoublonsTickets, { id: idTicket, name: titre, content: contenuIndex });
 
       // Créer les relations Item_Ticket si la colonne Items est renseignée
       if (estValide(itemsColonne) && idTicket) {
@@ -1505,16 +1361,12 @@ export async function importerCoutsCsv(donnees, ajouterLog) {
 
       ajouterLog(`Coût ${numTicket} : actiontime=${valeurActiontime}, cost_time=${valeurCoutTemps}, cost_fixed=${valeurCoutFixe}`);
 
-      const corpsCout = {
-        tickets_id: ticket.id,
-        name: `${MARQUAGE_IMPORT} - Ref ${numTicket}`,
-        actiontime: valeurActiontime,
-        cost_time: valeurCoutTemps,
-        cost_fixed: valeurCoutFixe,
-        entities_id: 0,
-      };
-
-      await clientGlpiLegacy.post('/TicketCost', { input: corpsCout });
+      await creerCoutTicket(ticket.id, {
+        nom: `${MARQUAGE_IMPORT} - Ref ${numTicket}`,
+        dureeSecondes: valeurActiontime,
+        coutTemps: valeurCoutTemps,
+        coutFixe: valeurCoutFixe,
+      });
       indexCoutsTickets.add(cleCout);
       ajouterLog(`TicketCost créé pour ${numTicket}`);
       resultat.importes++;

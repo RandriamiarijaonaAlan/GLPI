@@ -57,6 +57,7 @@ function ticketEstVisible(ticket) {
 function construireContenuTicket(donneesTicket) {
   const lignes = [];
   const description = String(donneesTicket.description || '').trim();
+  const refTicket = String(donneesTicket.refTicket || '').trim();
 
   if (description) {
     lignes.push(description);
@@ -66,8 +67,11 @@ function construireContenuTicket(donneesTicket) {
     if (lignes.length > 0) {
       lignes.push('');
     }
-
     lignes.push(MARQUAGE_NEWAPP);
+  }
+
+  if (refTicket) {
+    lignes.push(`Ref_Ticket: ${refTicket}`);
   }
 
   return lignes.join('\n');
@@ -80,7 +84,7 @@ function creerCorpsTicket(donneesTicket) {
     type: donneesTicket.type || 1,
     urgency: donneesTicket.urgence || 3,
     priority: donneesTicket.priorite || 3,
-    status: 1,
+    status: donneesTicket.status || 1,
     entities_id: 0,
   };
 }
@@ -168,7 +172,7 @@ export async function lierElementAuTicket(idTicket, element) {
 export async function creerCoutTicket(idTicket, donneesCout) {
   const corpsCout = {
     tickets_id: idTicket,
-    name: `${MARQUAGE_NEWAPP} - Coût saisi depuis NewAPP`,
+    name: donneesCout?.nom || `${MARQUAGE_NEWAPP} - Coût saisi depuis NewAPP`,
     actiontime: convertirNombreFormulaire(donneesCout?.dureeSecondes),
     cost_time: convertirNombreFormulaire(donneesCout?.coutTemps),
     cost_fixed: convertirNombreFormulaire(donneesCout?.coutFixe),
