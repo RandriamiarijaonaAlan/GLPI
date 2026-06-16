@@ -334,6 +334,43 @@ export async function chargerUrlImageDocument(idDocument) {
   }
 }
 
+const endpointsCreation = Object.fromEntries(
+  cheminsElements.map(([itemtype, cheminV1, cheminV2]) => [
+    itemtype,
+    { v1: cheminV1.split('?')[0], v2: cheminV2.split('?')[0] },
+  ])
+);
+
+function extraireIdElement(donnees) {
+  if (donnees?.id) return donnees.id;
+  if (Array.isArray(donnees)) return donnees[0]?.id || donnees[0]?.items_id;
+  return donnees?.items_id || null;
+}
+
+export async function creerElement(itemtype, corpsElement) {
+  const endpoints = endpointsCreation[itemtype];
+  if (!endpoints) throw new Error(`Type non supporté : ${itemtype}`);
+
+  const corpsMinimal = { name: corpsElement.name, entities_id: 0, comment: corpsElement.comment };
+
+  try {
+    const reponse = await clientGlpiLegacy.post(endpoints.v1, { input: corpsElement });
+    return { ...reponse.data, id: extraireIdElement(reponse.data) };
+  } catch {
+    // v1 refusée : essayer v2
+  }
+
+  try {
+    const reponse = await clientGlpiV2.post(endpoints.v2, corpsElement);
+    return { ...reponse.data, id: extraireIdElement(reponse.data) };
+  } catch {
+    // v2 refusée : essayer v1 avec champs minimaux
+  }
+
+  const reponse = await clientGlpiLegacy.post(endpoints.v1, { input: corpsMinimal });
+  return { ...reponse.data, id: extraireIdElement(reponse.data) };
+}
+
 export async function recupererTousLesElements() {
   const groupesElements = await Promise.all(
     cheminsElements.map(async ([itemtype, chemin, cheminV2]) => {

@@ -1,6 +1,6 @@
 import {
   creerCoutKanbanSqlite,
-  recupererCoutsKanbanSqlite,
+  reouvrirDernierCoutKanbanSqlite,
   supprimerDernierCoutKanbanSqlite,
 } from './kanbanCostsApi';
 import clientGlpiLegacy from './glpiLegacyClient';
@@ -45,27 +45,6 @@ function extraireReferenceTicketDepuisContenu(contenu) {
   return correspondance ? correspondance[1].trim() : '';
 }
 
-async function creerCoutDepuisMouvement(ticketId, coutFixe, commentaire, coutReference = null) {
-  const nombreItems = Math.max(1, Number(coutReference?.nombre_items || 1));
-  const items = lireItemsCout(coutReference);
-
-  return creerCoutKanbanSqlite({
-    ticketId,
-    coutFixe,
-    commentaire,
-    nombreItems,
-    items,
-  });
-}
-
-function lireItemsCout(cout) {
-  try {
-    const items = JSON.parse(cout?.items_json || '[]');
-    return Array.isArray(items) ? items : [];
-  } catch {
-    return [];
-  }
-}
 
 function construireIndexTickets(tickets) {
   const parId = new Map();
@@ -111,17 +90,6 @@ export async function importerMouvementsCsv(donnees, ajouterLog) {
     return indexTickets.parReference.get(cle) || indexTickets.parId.get(cle) || null;
   }
 
-  async function recupererDernierCoutKanban(ticketId) {
-    const couts = await recupererCoutsKanbanSqlite();
-    return normaliserListe(couts)
-      .filter((cout) => Number(cout.ticket_id) === Number(ticketId))
-      .sort((a, b) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        if (dateA !== dateB) return dateB - dateA;
-        return Number(b.id || 0) - Number(a.id || 0);
-      })[0] || null;
-  }
 
   for (const ligne of donnees) {
     const ticketBrut = lireColonne(ligne, 'ticket', 'Ticket', 'TICKET');
@@ -169,19 +137,17 @@ export async function importerMouvementsCsv(donnees, ajouterLog) {
         ajouterLog(`Ticket #${ticketGlpiId} : annulation du dernier cout`);
       } else if (action === 'open') {
         const pourcentage = valeur ?? 0;
-        const dernierCout = await recupererDernierCoutKanban(ticketGlpiId);
-        const baseReouverture = lireValeurNumerique(dernierCout?.cout_fixe) ?? 0;
-        const montantReouverture = (baseReouverture * pourcentage) / 100;
-        await creerCoutDepuisMouvement(
-          ticketGlpiId,
-          montantReouverture,
-          `Import reouverture +${pourcentage}%`,
-          dernierCout,
-        );
-        ajouterLog(`Ticket #${ticketGlpiId} : reouverture importee ${montantReouverture} sur base ${baseReouverture}`);
+        await reouvrirDernierCoutKanbanSqlite(ticketGlpiId, pourcentage);
+        ajouterLog(`Ticket #${ticketGlpiId} : reouverture importee +${pourcentage}%`);
       } else if (action === 'close') {
         const coutFixe = valeur ?? 0;
-        await creerCoutDepuisMouvement(ticketGlpiId, coutFixe, 'Import close');
+        await creerCoutKanbanSqlite({
+          ticketId: ticketGlpiId,
+          coutFixe,
+          commentaire: 'Import close',
+          nombreItems: 1,
+          items: [],
+        });
         ajouterLog(`Ticket #${ticketGlpiId} : cloture avec supercost ${coutFixe}`);
       }
 
